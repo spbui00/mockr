@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from typing import Dict, Any
-from models.trial import CreateTrialRequest, TrialSession, TrialStatus
-from services.openjustice import openjustice_service
+from models.trial import CreateTrialRequest, TrialSession, TrialStatus, CaseContextConfig
 from services.agent_manager import AgentManager
 from datetime import datetime
 import uuid
@@ -19,18 +18,26 @@ async def create_trial(request: CreateTrialRequest) -> Dict[str, Any]:
     try:
         session_id = str(uuid.uuid4())
         
-        legal_context = await openjustice_service.get_legal_context(
-            jurisdiction=request.legal_properties.jurisdiction,
-            legal_areas=request.legal_properties.legal_areas,
-            case_description=request.case_context.description
+        legal_context = {
+            "jurisdiction": request.legal_properties.jurisdiction if request.legal_properties else "United States",
+            "legal_areas": request.legal_properties.legal_areas if request.legal_properties else []
+        }
+        
+        case_context = CaseContextConfig(
+            description="Case context gathered during fact-gathering phase",
+            additional_info={}
         )
         
-        agent_manager = AgentManager()
+        agent_manager = AgentManager(
+            session_id=session_id,
+            conversation_id=request.conversationId,
+            flow_id=request.flowId
+        )
         agent_manager.create_agents(
             session_id=session_id,
             roles=[role.role for role in request.roles if role.enabled],
             legal_context=legal_context,
-            case_context=request.case_context
+            case_context=case_context
         )
         
         session = {
@@ -38,7 +45,8 @@ async def create_trial(request: CreateTrialRequest) -> Dict[str, Any]:
             "status": TrialStatus.CREATED,
             "roles": request.roles,
             "legal_properties": request.legal_properties,
-            "case_context": request.case_context,
+            "conversation_id": request.conversationId,
+            "trial_flow_id": request.flowId,
             "legal_context": legal_context,
             "agent_manager": agent_manager,
             "messages": [],

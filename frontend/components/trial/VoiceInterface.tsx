@@ -24,6 +24,7 @@ export function VoiceInterface({
   const [isProcessing, setIsProcessing] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const [audioLevel, setAudioLevel] = useState(0);
+  const [micPermission, setMicPermission] = useState<'granted' | 'denied' | 'prompt'>('prompt');
 
   const recorderRef = useRef<AudioRecorder | null>(null);
   const wsRef = useRef<TrialWebSocket | null>(null);
@@ -57,12 +58,38 @@ export function VoiceInterface({
     });
 
     recorderRef.current = new AudioRecorder();
+    
+    checkMicrophonePermission();
 
     return () => {
       ws.close();
       wsRef.current = null;
     };
   }, [sessionId]);
+
+  const checkMicrophonePermission = async () => {
+    try {
+      const hasPermission = await recorderRef.current?.checkPermission();
+      setMicPermission(hasPermission ? 'granted' : 'prompt');
+    } catch (error) {
+      console.log('Permission check not supported');
+    }
+  };
+
+  const requestMicrophonePermission = async () => {
+    if (!recorderRef.current) return;
+    
+    try {
+      await recorderRef.current.start();
+      setMicPermission('granted');
+      await recorderRef.current.stop();
+      setIsMuted(false);
+    } catch (error: any) {
+      console.error('Permission denied:', error);
+      setMicPermission('denied');
+      alert(error.message || 'Microphone access denied. Please enable microphone permissions in your browser settings.');
+    }
+  };
 
   const handleAgentAudio = async (audioBase64: string) => {
     if (isPlayingRef.current) return;
@@ -89,9 +116,10 @@ export function VoiceInterface({
       }, 100);
 
       (recorderRef.current as any).intervalId = checkAudioLevel;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error starting recording:', error);
-      alert('Failed to access microphone. Please check permissions.');
+      const message = error.message || 'Failed to access microphone. Please check permissions.';
+      alert(message);
     }
   };
 
@@ -152,6 +180,32 @@ export function VoiceInterface({
   return (
     <Card className="p-6">
       <div className="space-y-6">
+        {micPermission === 'prompt' && (
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+            <p className="text-sm text-yellow-800 dark:text-yellow-200 mb-2">
+              Microphone access required for voice trial
+            </p>
+            <Button onClick={requestMicrophonePermission} size="sm" variant="outline">
+              <Mic className="mr-2 h-4 w-4" />
+              Enable Microphone
+            </Button>
+          </div>
+        )}
+
+        {micPermission === 'denied' && (
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+            <p className="text-sm text-red-800 dark:text-red-200 mb-2">
+              Microphone access denied. Please enable it in your browser settings:
+            </p>
+            <ul className="text-xs text-red-700 dark:text-red-300 list-disc ml-4 space-y-1">
+              <li>Click the 🔒 or ⓘ icon in your browser's address bar</li>
+              <li>Find "Microphone" or "Permissions" section</li>
+              <li>Change microphone permission to "Allow"</li>
+              <li>Reload this page</li>
+            </ul>
+          </div>
+        )}
+
         <div className="flex items-center justify-center space-x-4">
           <div className="text-center">
             <div className="relative inline-block">
@@ -160,7 +214,7 @@ export function VoiceInterface({
                 variant={isRecording ? 'destructive' : 'default'}
                 className="w-24 h-24 rounded-full"
                 onClick={() => setIsMuted(!isMuted)}
-                disabled={connectionStatus !== 'connected' || isProcessing}
+                disabled={connectionStatus !== 'connected' || isProcessing || micPermission !== 'granted'}
               >
                 {isMuted ? (
                   <MicOff className="h-12 w-12" />

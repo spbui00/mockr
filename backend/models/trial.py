@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from enum import Enum
 from datetime import datetime
 
@@ -19,6 +19,15 @@ class MessageType(str, Enum):
     AGENT = "agent"
     SYSTEM = "system"
 
+class FactGatheringMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+    timestamp: str
+
+class NAPStreamEvent(BaseModel):
+    event: str
+    data: Dict[str, Any]
+
 class RoleConfig(BaseModel):
     role: RoleType
     enabled: bool
@@ -35,9 +44,10 @@ class CaseContextConfig(BaseModel):
     additional_info: Dict[str, Any] = {}
 
 class CreateTrialRequest(BaseModel):
+    conversationId: str
+    flowId: str
     roles: List[RoleConfig]
-    legal_properties: LegalPropertiesConfig
-    case_context: CaseContextConfig
+    legal_properties: Optional[LegalPropertiesConfig] = None
 
 class TrialMessage(BaseModel):
     id: str

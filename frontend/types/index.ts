@@ -23,9 +23,23 @@ export interface CaseContextConfig {
 }
 
 export interface CreateTrialRequest {
+  conversationId: string;
+  flowId: string;
   roles: RoleConfig[];
-  legal_properties: LegalPropertiesConfig;
-  case_context: CaseContextConfig;
+  legal_properties?: LegalPropertiesConfig;
+  executionId?: string;
+}
+
+export interface FactGatheringMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+}
+
+export interface NAPStreamEvent {
+  event: string;
+  data: any;
 }
 
 export interface Agent {

@@ -3,8 +3,26 @@ export class AudioRecorder {
   private audioChunks: Blob[] = [];
   private stream: MediaStream | null = null;
 
+  async checkPermission(): Promise<boolean> {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Your browser does not support audio recording. Please use Chrome, Firefox, or Edge.');
+      }
+      
+      const permissionStatus = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+      return permissionStatus.state === 'granted';
+    } catch (error) {
+      console.warn('Permission check not supported, will request on start:', error);
+      return false;
+    }
+  }
+
   async start(): Promise<void> {
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Your browser does not support audio recording. Please use a modern browser like Chrome, Firefox, or Edge.');
+      }
+
       this.stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
           echoCancellation: true,
@@ -13,8 +31,12 @@ export class AudioRecorder {
         } 
       });
       
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') 
+        ? 'audio/webm' 
+        : 'audio/mp4';
+      
       this.mediaRecorder = new MediaRecorder(this.stream, {
-        mimeType: 'audio/webm'
+        mimeType: mimeType
       });
       
       this.audioChunks = [];
@@ -26,8 +48,17 @@ export class AudioRecorder {
       };
       
       this.mediaRecorder.start(1000);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error starting audio recording:', error);
+      
+      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+        throw new Error('Microphone access denied. Please allow microphone access in your browser settings and reload the page.');
+      } else if (error.name === 'NotFoundError') {
+        throw new Error('No microphone found. Please connect a microphone and try again.');
+      } else if (error.name === 'NotSupportedError') {
+        throw new Error('Your browser does not support audio recording. Please use Chrome, Firefox, or Edge.');
+      }
+      
       throw error;
     }
   }

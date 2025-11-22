@@ -1,13 +1,18 @@
 from typing import Dict, List, Any, Optional
 from models.agents import AgentRole, AgentConfig, AgentResponse
 from models.trial import RoleType, LegalPropertiesConfig, CaseContextConfig
+from services.openjustice import openjustice_service
 import json
 import re
 
 class AgentManager:
-    def __init__(self):
+    def __init__(self, session_id: str = "", conversation_id: str = "", flow_id: str = ""):
         self.agents: Dict[str, AgentConfig] = {}
         self.conversation_history: List[Dict[str, str]] = []
+        self.session_id = session_id
+        self.conversation_id = conversation_id
+        self.trial_flow_id = flow_id
+        self.trial_execution_id: Optional[str] = None
     
     def create_agents(
         self,
@@ -175,7 +180,7 @@ Remember: Everyone deserves a strong defense. Your duty is to your client within
         
         agent = self.agents[responding_role]
         
-        response_text = await self._generate_response(agent, user_message)
+        response_text = await self.get_agent_response_from_flow(agent, user_message)
         
         self.conversation_history.append({
             "role": responding_role,
@@ -186,6 +191,71 @@ Remember: Everyone deserves a strong defense. Your duty is to your client within
             role=AgentRole(responding_role),
             text=response_text
         )
+    
+    async def get_agent_response_from_flow(
+        self,
+        agent: AgentConfig,
+        user_message: str
+    ) -> str:
+        try:
+            role_prompts = {
+                "judge": """You are Judge Anderson presiding over a mock trial. You are impartial, 
+maintain courtroom order, make legal rulings based on law and procedure, and ensure fair proceedings. 
+Respond professionally and judiciously to all statements and questions.""",
+                
+                "prosecutor": """You are District Attorney Martinez, the prosecutor in this trial. 
+Your role is to debate effectively, present strong arguments for conviction, identify weaknesses 
+in the defense's position, challenge their claims with facts and legal precedent, and prove guilt 
+beyond reasonable doubt. Be assertive, methodical, and persuasive in your arguments.""",
+                
+                "defense": """You are Defense Attorney Chen, representing the defendant. Your role is 
+to debate effectively, find flaws in the prosecution's arguments, challenge their evidence, 
+present alternative interpretations, protect your client's rights, and create reasonable doubt. 
+Be protective, analytical, and strategic in countering prosecution claims."""
+            }
+            
+            system_prompt = role_prompts.get(agent.role.value, "You are a legal professional in a mock trial.")
+            
+            await openjustice_service.send_message_to_conversation(
+                conversation_id=self.conversation_id,
+                user_message=user_message,
+                system_prompt=system_prompt
+            )
+            
+            response_text = ""
+            
+            if self.trial_execution_id:
+                print(f"[AgentManager] Using existing trial executionId: {self.trial_execution_id}")
+                stream_params = {"execution_id": self.trial_execution_id}
+            else:
+                print(f"[AgentManager] Starting new trial execution with flowId: {self.trial_flow_id}")
+                stream_params = {
+                    "dialog_flow_id": self.trial_flow_id,
+                    "conversation_id": self.conversation_id
+                }
+            
+            async for event in openjustice_service.stream_dialog_flow(**stream_params):
+                event_type = event.get("event")
+                event_data = event.get("data", {})
+                
+                if event_type == "message":
+                    text = event_data.get("text", "")
+                    response_text += text
+                
+                elif event_type == "awaiting-user-input":
+                    new_execution_id = event_data.get("executionId")
+                    if new_execution_id:
+                        self.trial_execution_id = new_execution_id
+                        print(f"[AgentManager] Updated trial executionId: {new_execution_id}")
+                
+                elif event_type == "done" or event_type == "stream-complete":
+                    break
+            
+            return response_text if response_text else "I understand. Please continue."
+        
+        except Exception as e:
+            print(f"Error getting response from flow: {e}")
+            return f"I acknowledge your statement regarding: {user_message[:100]}..."
     
     def _determine_responding_agent(self, message: str) -> str:
         message_lower = message.lower()
@@ -210,40 +280,6 @@ Remember: Everyone deserves a strong defense. Your duty is to your client within
         
         return "judge"
     
-    async def _generate_response(self, agent: AgentConfig, message: str) -> str:
-        context = "\n".join([
-            f"{msg['role']}: {msg['content']}" 
-            for msg in self.conversation_history[-10:]
-        ])
-        
-        prompt = f"{agent.system_prompt}\n\nCONVERSATION HISTORY:\n{context}\n\nUSER: {message}\n\n{agent.name.upper()}:"
-        
-        simulated_responses = {
-            "judge": [
-                "Counselor, please proceed with your argument. The court is listening.",
-                "Objection noted. I'll allow it, but please be mindful of relevance.",
-                "Let's maintain order in this courtroom. Continue, counselor.",
-                "The court finds this line of questioning appropriate. You may proceed.",
-            ],
-            "prosecutor": [
-                "Your Honor, the evidence clearly demonstrates the defendant's culpability in this matter.",
-                "I object to that characterization. The facts speak for themselves.",
-                "The state has presented compelling evidence that establishes guilt beyond reasonable doubt.",
-                "Your Honor, may I redirect? The witness's testimony is crucial to our case.",
-            ],
-            "defense": [
-                "Your Honor, the prosecution has failed to meet their burden of proof.",
-                "Objection! This line of questioning is prejudicial and irrelevant.",
-                "My client maintains their innocence, and the evidence supports that position.",
-                "Your Honor, I move to strike that statement as it assumes facts not in evidence.",
-            ]
-        }
-        
-        role_key = agent.role.value
-        responses = simulated_responses.get(role_key, ["I understand. Let me respond appropriately."])
-        
-        import random
-        return random.choice(responses)
     
     def get_all_agents(self) -> Dict[str, AgentConfig]:
         return self.agents
