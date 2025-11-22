@@ -1,12 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter, useParams, useSearchParams } from 'next/navigation';
+import { useState, useEffect, useRef } from 'react';
+import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { ChatInterface } from '@/components/fact-gathering/ChatInterface';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { motion } from 'framer-motion';
 import { RoleType } from '@/types';
-import { ArrowLeft, Loader2, Play } from 'lucide-react';
 
 export default function FactGatheringPage() {
   const router = useRouter();
@@ -16,12 +14,14 @@ export default function FactGatheringPage() {
   const factFlowId = searchParams.get('factFlowId');
   const trialFlowId = searchParams.get('trialFlowId');
   const rolesParam = searchParams.get('roles');
-
-  const [loading, setLoading] = useState(false);
+  
+  const [audioLevel, setAudioLevel] = useState(0);
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [executionId, setExecutionId] = useState<string | null>(null);
-  const [flowComplete, setFlowComplete] = useState(false);
   const [selectedRoles, setSelectedRoles] = useState<RoleType[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (rolesParam) {
@@ -32,16 +32,53 @@ export default function FactGatheringPage() {
     }
   }, [rolesParam]);
 
-  const handleFlowComplete = () => {
-    setFlowComplete(true);
-  };
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+
+    const initAudio = async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioContextRef.current = new AudioContext();
+        analyserRef.current = audioContextRef.current.createAnalyser();
+        analyserRef.current.fftSize = 256;
+        
+        const source = audioContextRef.current.createMediaStreamSource(stream);
+        source.connect(analyserRef.current);
+
+        const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+
+        const updateAudioLevel = () => {
+          if (analyserRef.current) {
+            analyserRef.current.getByteFrequencyData(dataArray);
+            const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+            setAudioLevel(average / 255);
+          }
+          animationFrameRef.current = requestAnimationFrame(updateAudioLevel);
+        };
+
+        updateAudioLevel();
+      } catch (err) {
+        console.error('Microphone access denied:', err);
+      }
+    };
+
+    initAudio();
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+      }
+    };
+  }, []);
 
   const handleConversationCreated = (convId: string) => {
     setConversationId(convId);
-  };
-
-  const handleExecutionIdReceived = (execId: string) => {
-    setExecutionId(execId);
   };
 
   const handleStartTrial = async () => {
@@ -55,12 +92,17 @@ export default function FactGatheringPage() {
       return;
     }
 
-    setLoading(true);
+    if (!trialFlowId) {
+      alert('No trial flow ID available.');
+      return;
+    }
+
+    setIsLoading(true);
 
     try {
       const trialRequest = {
         conversationId,
-        flowId: trialFlowId || '',
+        flowId: trialFlowId,
         roles: selectedRoles.map((role) => ({
           role,
           enabled: true,
@@ -91,96 +133,53 @@ export default function FactGatheringPage() {
     } catch (error) {
       console.error('Error creating trial:', error);
       alert('Failed to start trial. Please try again.');
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
-  if (!factFlowId || !trialFlowId) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Card className="p-6 max-w-md">
-          <h2 className="text-xl font-bold mb-2">Missing Flow IDs</h2>
-          <p className="text-muted-foreground mb-4">
-            Both Fact-Gathering and Trial Flow IDs are required.
-          </p>
-          <Button onClick={() => router.push('/')}>Go Back</Button>
-        </Card>
-      </div>
-    );
+  if (!factFlowId) {
+    return null;
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-background to-muted/20">
-      <div className="container mx-auto py-8 px-4">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold mb-2">Fact Gathering</h1>
-            <p className="text-muted-foreground">
-              Discuss your case with the AI to gather relevant facts
-            </p>
-            {selectedRoles.length > 0 && (
-              <p className="text-sm text-muted-foreground mt-1">
-                Selected roles: {selectedRoles.map(r => r.charAt(0).toUpperCase() + r.slice(1)).join(', ')}
-              </p>
-            )}
-            {conversationId && (
-              <p className="text-xs text-muted-foreground mt-1">
-                Conversation ID: {conversationId}
-              </p>
-            )}
-          </div>
-          <div className="flex space-x-2">
-            <Button variant="outline" onClick={() => router.push('/')}>
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back
-            </Button>
-            <Button
-              onClick={handleStartTrial}
-              disabled={!conversationId || loading}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Starting...
-                </>
-              ) : (
-                <>
-                  <Play className="mr-2 h-4 w-4" />
-                  Start Trial
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
+    <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center p-4 overflow-hidden relative">
+      <div className="absolute inset-0 flex items-center justify-center gap-1 px-4 opacity-25">
+        {[...Array(80)].map((_, i) => {
+          const centerDistance = Math.abs(i - 40) / 40;
+          const baseHeight = 50 + Math.sin(i * 0.3) * 30;
+          const audioMultiplier = Math.pow(audioLevel, 0.7) * 600 * (1 - centerDistance * 0.5);
+          const height = baseHeight + audioMultiplier;
+          
+          return (
+            <motion.div
+              key={i}
+              className="flex-1 bg-gradient-to-b from-red-300 via-red-500 to-red-300 rounded-lg"
+              style={{
+                minWidth: '2px',
+              }}
+              animate={{
+                height: `${height}px`,
+                opacity: 0.4 + audioLevel * 0.6,
+              }}
+              transition={{
+                duration: 0.05,
+                ease: 'easeOut',
+              }}
+            />
+          );
+        })}
+      </div>
 
-        <div className="max-w-5xl mx-auto">
-          <ChatInterface
-            sessionId={sessionId}
-            flowId={factFlowId}
-            onConversationCreated={handleConversationCreated}
-            onExecutionIdReceived={handleExecutionIdReceived}
-            onFlowComplete={handleFlowComplete}
-          />
-        </div>
-
-        {flowComplete && (
-          <div className="fixed bottom-8 right-8">
-            <Card className="p-4 bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800">
-              <p className="text-sm text-green-800 dark:text-green-200 mb-2">
-                Fact gathering complete! Ready to start the trial.
-              </p>
-              <Button
-                onClick={handleStartTrial}
-                disabled={loading}
-                className="w-full bg-green-600 hover:bg-green-700"
-                size="sm"
-              >
-                {loading ? 'Starting...' : 'Start Trial Now'}
-              </Button>
-            </Card>
-          </div>
-        )}
+      <div className="w-full max-w-4xl relative z-10">
+        <ChatInterface
+          sessionId={sessionId}
+          flowId={factFlowId}
+          onConversationCreated={handleConversationCreated}
+          onExecutionIdReceived={() => {}}
+          onFlowComplete={() => {}}
+          onStartTrial={handleStartTrial}
+          isTrialLoading={isLoading}
+        />
       </div>
     </div>
   );

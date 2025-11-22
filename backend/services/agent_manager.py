@@ -250,12 +250,10 @@ Be protective, analytical, and strategic in countering prosecution claims."""
             async for event in openjustice_service.stream_dialog_flow(**stream_params):
                 event_type = event.get("event")
                 event_data = event.get("data", {})
-                print(f"[AgentManager] Stream event: {event_type}")
                 
                 if event_type == "message":
                     text = event_data.get("text", "")
                     response_text += text
-                    print(f"[AgentManager] Accumulated response: {len(response_text)} chars")
                 
                 elif event_type == "awaiting-user-input":
                     new_execution_id = event_data.get("executionId")
@@ -267,8 +265,6 @@ Be protective, analytical, and strategic in countering prosecution claims."""
                     print(f"[AgentManager] Stream ended with event: {event_type}")
                     break
             
-            print(f"[AgentManager] Final response text length: {len(response_text)} chars")
-            print(f"[AgentManager] Response preview: {response_text[:100]}...")
             return response_text if response_text else "I understand. Please continue."
         
         except Exception as e:

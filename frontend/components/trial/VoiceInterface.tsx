@@ -36,7 +36,6 @@ export function VoiceInterface({
     ws.connect()
       .then(() => {
         setConnectionStatus('connected');
-        console.log('WebSocket connected');
       })
       .catch((error) => {
         console.error('WebSocket connection failed:', error);
@@ -44,7 +43,6 @@ export function VoiceInterface({
       });
 
     ws.on('*', (data) => {
-      console.log('WebSocket message:', data);
       onMessage(data);
 
       if (data.type === 'agent_audio' && data.audio) {
@@ -75,7 +73,6 @@ export function VoiceInterface({
         e.stopPropagation();
         
         if (!e.repeat) {
-          console.log('[VOICE] Space key pressed');
           handleMouseDown();
         }
       }
@@ -85,7 +82,6 @@ export function VoiceInterface({
       if (e.code === 'Space') {
         e.preventDefault();
         e.stopPropagation();
-        console.log('[VOICE] Space key released');
         handleMouseUp();
       }
     };
@@ -138,7 +134,6 @@ export function VoiceInterface({
   const startRecording = async () => {
     if (!recorderRef.current || isPlayingRef.current || isProcessing) return;
 
-    console.log('[VOICE] Starting recording (push-to-speak)...');
     try {
       await recorderRef.current.start();
       setIsRecording(true);
@@ -158,33 +153,25 @@ export function VoiceInterface({
   const stopRecording = async () => {
     if (!recorderRef.current || !wsRef.current || !isRecording) return;
 
-    console.log('[VOICE] Stopping recording and processing audio...');
     try {
       clearInterval((recorderRef.current as any).intervalId);
       setAudioLevel(0);
 
-      console.log('[VOICE] Getting audio blob...');
       const audioBlob = await recorderRef.current.stop();
-      console.log(`[VOICE] Got audio blob: ${audioBlob.size} bytes`);
       setIsRecording(false);
 
       if (audioBlob.size < 1000) {
-        console.log('[VOICE] Audio blob too small, skipping send');
         return;
       }
 
       setIsProcessing(true);
 
-      console.log('[VOICE] Converting to base64...');
       const audioBase64 = await blobToBase64(audioBlob);
-      console.log(`[VOICE] Base64 length: ${audioBase64.length} chars`);
 
-      console.log('[VOICE] Sending audio via WebSocket...');
       wsRef.current.send({
         type: 'audio',
         audio: audioBase64,
       });
-      console.log('[VOICE] Audio sent successfully');
     } catch (error) {
       console.error('[VOICE] Error stopping recording:', error);
       setIsProcessing(false);
@@ -193,7 +180,6 @@ export function VoiceInterface({
 
   const handleMouseDown = async () => {
     if (connectionStatus !== 'connected' || isProcessing || micPermission !== 'granted' || isPlayingRef.current) {
-      console.log('[VOICE] Cannot start recording:', { connectionStatus, isProcessing, micPermission, isPlaying: isPlayingRef.current });
       return;
     }
     await startRecording();

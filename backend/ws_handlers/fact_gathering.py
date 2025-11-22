@@ -201,6 +201,7 @@ async def stream_dialog_flow_response(
         current_message = ""
         last_node_type = None
         is_awaiting_input = False
+        has_received_any_message = False
         
         async for event in openjustice_service.stream_dialog_flow(
             dialog_flow_id=dialog_flow_id,
@@ -210,11 +211,11 @@ async def stream_dialog_flow_response(
             event_type = event.get("event")
             event_data = event.get("data", {})
             
-            print(f"[WS Handler] Processing event: {event_type}, data keys: {event_data.keys()}")
             
             if event_type == "message":
                 text = event_data.get("text", "")
                 current_message += text
+                has_received_any_message = True
                 
                 await websocket.send_json({
                     "type": "ai_message",
@@ -228,7 +229,6 @@ async def stream_dialog_flow_response(
                 node_title = event_data.get("title", "")
                 node_desc = event_data.get("description", "")
                 
-                print(f"[WS Handler] Node: {node_type}, Status: {node_status}, Title: {node_title}")
                 
                 last_node_type = node_type
                 
@@ -266,12 +266,12 @@ async def stream_dialog_flow_response(
                     })
                 
                 is_awaiting_input = True
+                current_message = ""
                 
                 await websocket.send_json({
                     "type": "awaiting_input",
                     "executionId": new_execution_id
                 })
-                current_message = ""
             
             elif event_type == "done":
                 if not is_awaiting_input:
@@ -305,7 +305,7 @@ async def stream_dialog_flow_response(
                 })
                 break
         
-        print(f"[WS Handler] Stream ended. Last node type: {last_node_type}, Is awaiting input: {is_awaiting_input}, Current message length: {len(current_message)}")
+        print(f"[WS Handler] Stream ended. Last node type: {last_node_type}, Is awaiting input: {is_awaiting_input}, Current message length: {len(current_message)}, Has received message: {has_received_any_message}")
         
         if current_message:
             session["messages"].append({
@@ -315,15 +315,34 @@ async def stream_dialog_flow_response(
                 "timestamp": datetime.now().isoformat()
             })
         
-        if not is_awaiting_input:
-            if session.get("execution_id"):
-                print("[WS Handler] Stream ended but executionId exists - sending awaiting_input")
-                await websocket.send_json({
-                    "type": "awaiting_input",
-                    "executionId": session["execution_id"]
-                })
+        if is_awaiting_input:
+            execution_id = session.get("execution_id")
+            if execution_id:
+                if not has_received_any_message and not current_message:
+                    await websocket.send_json({
+                        "type": "ai_message",
+                        "text": "Ready to gather facts. Please provide information about your case.",
+                        "isComplete": False
+                    })
+                    await websocket.send_json({
+                        "type": "awaiting_input",
+                        "executionId": execution_id
+                    })
+                else:
+                    await websocket.send_json({
+                        "type": "awaiting_input",
+                        "executionId": execution_id
+                    })
+                print(f"[WS Handler] Sent awaiting_input with executionId: {execution_id}")
             else:
-                print("[WS Handler] Warning: Stream ended without executionId or awaiting-user-input event")
+                print("[WS Handler] Warning: Stream ended awaiting input but no executionId")
+        elif session.get("execution_id"):
+            print("[WS Handler] Warning: Stream ended without awaiting input but executionId exists")
+            execution_id = session.get("execution_id")
+            await websocket.send_json({
+                "type": "awaiting_input",
+                "executionId": execution_id
+            })
         
     except Exception as e:
         await websocket.send_json({

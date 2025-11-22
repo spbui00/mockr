@@ -46,12 +46,6 @@ class OpenJusticeService:
             url = f"{self.base_url}/conversation/send-message"
             headers = self._get_headers()
             
-            print("=" * 80)
-            print("OpenJustice API Request:")
-            print(f"URL: {url}")
-            print(f"Headers: {headers}")
-            print(f"Payload: {payload}")
-            print("=" * 80)
             
             response = await self.client.post(
                 url,
@@ -59,10 +53,6 @@ class OpenJusticeService:
                 json=payload
             )
             
-            print(f"Response Status: {response.status_code}")
-            print(f"Response Headers: {dict(response.headers)}")
-            print(f"Response Body: {response.text[:500]}")
-            print("=" * 80)
             
             response.raise_for_status()
             data = response.json()
@@ -96,12 +86,6 @@ class OpenJusticeService:
                     params["conversationId"] = conversation_id
             
             url = f"{self.base_url}/nap/stream"
-            print("=" * 80)
-            print("NAP Stream Request:")
-            print(f"URL: {url}")
-            print(f"Params: {params}")
-            print(f"Headers: {self._get_headers()}")
-            print("=" * 80)
             
             async with self.client.stream(
                 "GET",
@@ -110,51 +94,31 @@ class OpenJusticeService:
                 headers=self._get_headers(),
                 timeout=120.0
             ) as response:
-                print(f"NAP Stream Response Status: {response.status_code}")
-                print(f"NAP Stream Response Headers: {dict(response.headers)}")
-                print("Starting to read SSE events...")
-                print("=" * 80)
-                
                 response.raise_for_status()
                 
                 current_event = None
-                line_count = 0
                 async for line in response.aiter_lines():
-                    line_count += 1
                     line = line.strip()
-                    
-                    print(f"[Line {line_count}] Raw: {line}")
                     
                     if line.startswith("event:"):
                         current_event = line[6:].strip()
-                        print(f"  → Event Type: {current_event}")
                     
                     elif line.startswith("data:"):
                         data_str = line[5:].strip()
-                        print(f"  → Data: {data_str[:200]}...")
                         try:
                             data = json.loads(data_str)
                             event_obj = {
                                 "event": current_event or "message",
                                 "data": data
                             }
-                            print(f"  → Yielding: {event_obj}")
                             yield event_obj
                         except json.JSONDecodeError:
                             event_obj = {
                                 "event": current_event or "message",
                                 "data": {"text": data_str}
                             }
-                            print(f"  → Yielding (as text): {event_obj}")
                             yield event_obj
                         current_event = None
-                    
-                    elif line == "":
-                        print(f"  → Empty line (SSE separator)")
-                
-                print("=" * 80)
-                print("NAP Stream ended")
-                print("=" * 80)
         
         except httpx.HTTPError as e:
             print(f"OpenJustice NAP stream error: {e}")

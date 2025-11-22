@@ -96,15 +96,7 @@ async def handle_audio_message(
     
     try:
         audio_base64 = data.get("audio")
-        print(f"[WS_AUDIO] Audio base64 present: {audio_base64 is not None}")
-        
-        if audio_base64:
-            print(f"[WS_AUDIO] Base64 length: {len(audio_base64)} chars")
-            print(f"[WS_AUDIO] First 50 chars: {audio_base64[:50]}")
-        
-        print(f"[WS_AUDIO] Decoding base64...")
         audio_bytes = base64.b64decode(audio_base64)
-        print(f"[WS_AUDIO] Decoded audio bytes: {len(audio_bytes)} bytes")
         
         await websocket.send_json({
             "type": "processing",

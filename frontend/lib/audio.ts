@@ -24,7 +24,6 @@ export class AudioRecorder {
         throw new Error('Your browser does not support audio recording. Please use a modern browser like Chrome, Firefox, or Edge.');
       }
 
-      console.log('[AUDIO] Requesting microphone access...');
       this.stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
           echoCancellation: true,
@@ -32,12 +31,10 @@ export class AudioRecorder {
           sampleRate: 16000
         } 
       });
-      console.log('[AUDIO] Microphone access granted');
       
       const mimeType = MediaRecorder.isTypeSupported('audio/webm') 
         ? 'audio/webm' 
         : 'audio/mp4';
-      console.log(`[AUDIO] Using mime type: ${mimeType}`);
       
       this.mediaRecorder = new MediaRecorder(this.stream, {
         mimeType: mimeType
@@ -47,13 +44,11 @@ export class AudioRecorder {
       
       this.mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
-          console.log(`[AUDIO] Received audio chunk: ${event.data.size} bytes`);
           this.audioChunks.push(event.data);
         }
       };
       
       this.mediaRecorder.start(1000);
-      console.log('[AUDIO] MediaRecorder started with 1000ms timeslice');
     } catch (error: any) {
       console.error('[AUDIO] Error starting audio recording:', error);
       
@@ -79,12 +74,9 @@ export class AudioRecorder {
       }
 
       this.mediaRecorder.onstop = () => {
-        console.log(`[AUDIO] Recording stopped. Chunks collected: ${this.audioChunks.length}`);
         const totalSize = this.audioChunks.reduce((sum, chunk) => sum + chunk.size, 0);
-        console.log(`[AUDIO] Total audio size: ${totalSize} bytes`);
         
         const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
-        console.log(`[AUDIO] Created blob: ${audioBlob.size} bytes, type: ${audioBlob.type}`);
         this.audioChunks = [];
         resolve(audioBlob);
       };
@@ -129,13 +121,10 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
 }
 
 export async function blobToBase64(blob: Blob): Promise<string> {
-  console.log(`[AUDIO] Converting blob to base64: ${blob.size} bytes, type: ${blob.type}`);
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => {
       const base64 = (reader.result as string).split(',')[1];
-      console.log(`[AUDIO] Base64 conversion complete: ${base64.length} chars`);
-      console.log(`[AUDIO] First 50 chars of base64: ${base64.substring(0, 50)}`);
       resolve(base64);
     };
     reader.onerror = (error) => {
