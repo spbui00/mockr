@@ -168,16 +168,22 @@ Remember: Everyone deserves a strong defense. Your duty is to your client within
         user_message: str,
         session_id: str
     ) -> AgentResponse:
+        print(f"[AgentManager] Getting agent response for message: '{user_message[:50]}...'")
+        print(f"[AgentManager] Available agents: {list(self.agents.keys())}")
+        
         self.conversation_history.append({
             "role": "user",
             "content": user_message
         })
         
         responding_role = self._determine_responding_agent(user_message)
+        print(f"[AgentManager] Determined responding role: {responding_role}")
         
         if responding_role not in self.agents:
-            responding_role = "judge"
+            print(f"[AgentManager] Role '{responding_role}' not found, using first available agent")
+            responding_role = next(iter(self.agents.keys()))
         
+        print(f"[AgentManager] Final responding role: {responding_role}")
         agent = self.agents[responding_role]
         
         response_text = await self.get_agent_response_from_flow(agent, user_message)
@@ -197,6 +203,9 @@ Remember: Everyone deserves a strong defense. Your duty is to your client within
         agent: AgentConfig,
         user_message: str
     ) -> str:
+        print(f"[AgentManager] get_agent_response_from_flow called for agent: {agent.role.value}")
+        print(f"[AgentManager] conversation_id: {self.conversation_id}, trial_flow_id: {self.trial_flow_id}")
+        
         try:
             role_prompts = {
                 "judge": """You are Judge Anderson presiding over a mock trial. You are impartial, 
@@ -215,12 +224,15 @@ Be protective, analytical, and strategic in countering prosecution claims."""
             }
             
             system_prompt = role_prompts.get(agent.role.value, "You are a legal professional in a mock trial.")
+            print(f"[AgentManager] Using system prompt for role: {agent.role.value}")
             
+            print(f"[AgentManager] Sending message to conversation...")
             await openjustice_service.send_message_to_conversation(
                 conversation_id=self.conversation_id,
                 user_message=user_message,
                 system_prompt=system_prompt
             )
+            print(f"[AgentManager] Message sent successfully")
             
             response_text = ""
             
@@ -234,13 +246,16 @@ Be protective, analytical, and strategic in countering prosecution claims."""
                     "conversation_id": self.conversation_id
                 }
             
+            print(f"[AgentManager] Starting stream with params: {stream_params}")
             async for event in openjustice_service.stream_dialog_flow(**stream_params):
                 event_type = event.get("event")
                 event_data = event.get("data", {})
+                print(f"[AgentManager] Stream event: {event_type}")
                 
                 if event_type == "message":
                     text = event_data.get("text", "")
                     response_text += text
+                    print(f"[AgentManager] Accumulated response: {len(response_text)} chars")
                 
                 elif event_type == "awaiting-user-input":
                     new_execution_id = event_data.get("executionId")
@@ -249,12 +264,17 @@ Be protective, analytical, and strategic in countering prosecution claims."""
                         print(f"[AgentManager] Updated trial executionId: {new_execution_id}")
                 
                 elif event_type == "done" or event_type == "stream-complete":
+                    print(f"[AgentManager] Stream ended with event: {event_type}")
                     break
             
+            print(f"[AgentManager] Final response text length: {len(response_text)} chars")
+            print(f"[AgentManager] Response preview: {response_text[:100]}...")
             return response_text if response_text else "I understand. Please continue."
         
         except Exception as e:
-            print(f"Error getting response from flow: {e}")
+            print(f"[AgentManager] ERROR in get_agent_response_from_flow: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
             return f"I acknowledge your statement regarding: {user_message[:100]}..."
     
     def _determine_responding_agent(self, message: str) -> str:

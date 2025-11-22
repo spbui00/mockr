@@ -26,46 +26,53 @@ export default function TrialPage() {
   }, [sessionId]);
 
   const fetchTrialSession = async () => {
+    console.log(`[TRIAL_PAGE] Fetching trial session: ${sessionId}`);
     try {
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
-      const response = await fetch(`${backendUrl}/api/trial/${sessionId}`);
+      const url = `${backendUrl}/api/trial/${sessionId}`;
+      console.log(`[TRIAL_PAGE] Fetching from: ${url}`);
+      
+      const response = await fetch(url);
+      console.log(`[TRIAL_PAGE] Response status: ${response.status}`);
 
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[TRIAL_PAGE] Error response: ${errorText}`);
         throw new Error('Failed to fetch trial session');
       }
 
       const data = await response.json();
+      console.log(`[TRIAL_PAGE] Session data received:`, data);
+      console.log(`[TRIAL_PAGE] Agents: ${data.agents?.length || 0}`);
+      
       setAgents(data.agents);
       setMessages(data.messages || []);
       setTrialInfo(data);
       setLoading(false);
     } catch (error) {
-      console.error('Error fetching trial session:', error);
+      console.error('[TRIAL_PAGE] Error fetching trial session:', error);
       alert('Failed to load trial session');
       router.push('/');
     }
   };
 
   const handleWebSocketMessage = (data: any) => {
+    console.log('[TRIAL_PAGE] Handling WebSocket message:', data.type);
+    
     if (data.type === 'user_message' || data.type === 'agent_response') {
       const newMessage: TrialMessage = {
-        id: `msg_${messages.length}`,
+        id: `${data.type}_${Date.now()}_${Math.random()}`,
         type: data.type === 'user_message' ? 'user' : 'agent',
         role: data.role as RoleType,
         content: data.content || data.text,
         timestamp: data.timestamp || new Date().toISOString(),
       };
+      console.log('[TRIAL_PAGE] Adding message:', newMessage.id, newMessage.type);
       setMessages((prev) => [...prev, newMessage]);
     }
 
     if (data.type === 'transcription') {
-      const newMessage: TrialMessage = {
-        id: `msg_${messages.length}`,
-        type: 'user',
-        content: data.text,
-        timestamp: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, newMessage]);
+      console.log('[TRIAL_PAGE] Transcription received (not adding to messages, waiting for user_message)');
     }
 
     if (data.type === 'agent_response') {

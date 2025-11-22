@@ -15,8 +15,13 @@ trial_sessions: Dict[str, Dict[str, Any]] = {}
 
 @router.post("/create")
 async def create_trial(request: CreateTrialRequest) -> Dict[str, Any]:
+    print(f"[TRIAL] Creating new trial session...")
+    print(f"[TRIAL] Request data: conversationId={request.conversationId}, flowId={request.flowId}")
+    print(f"[TRIAL] Roles: {[role.role for role in request.roles if role.enabled]}")
+    
     try:
         session_id = str(uuid.uuid4())
+        print(f"[TRIAL] Generated session_id: {session_id}")
         
         legal_context = {
             "jurisdiction": request.legal_properties.jurisdiction if request.legal_properties else "United States",
@@ -28,6 +33,7 @@ async def create_trial(request: CreateTrialRequest) -> Dict[str, Any]:
             additional_info={}
         )
         
+        print(f"[TRIAL] Creating agent manager...")
         agent_manager = AgentManager(
             session_id=session_id,
             conversation_id=request.conversationId,
@@ -39,6 +45,7 @@ async def create_trial(request: CreateTrialRequest) -> Dict[str, Any]:
             legal_context=legal_context,
             case_context=case_context
         )
+        print(f"[TRIAL] Agents created: {len(agent_manager.get_all_agents())} agents")
         
         session = {
             "session_id": session_id,
@@ -55,6 +62,8 @@ async def create_trial(request: CreateTrialRequest) -> Dict[str, Any]:
         }
         
         trial_sessions[session_id] = session
+        print(f"[TRIAL] Session {session_id} stored in trial_sessions")
+        print(f"[TRIAL] Total active sessions: {len(trial_sessions)}")
         
         return {
             "session_id": session_id,
@@ -73,11 +82,16 @@ async def create_trial(request: CreateTrialRequest) -> Dict[str, Any]:
 
 @router.get("/{session_id}")
 async def get_trial_session(session_id: str) -> Dict[str, Any]:
+    print(f"[TRIAL] GET request for session: {session_id}")
+    print(f"[TRIAL] Available sessions: {list(trial_sessions.keys())}")
+    
     if session_id not in trial_sessions:
+        print(f"[TRIAL] Session {session_id} not found!")
         raise HTTPException(status_code=404, detail="Session not found")
     
     session = trial_sessions[session_id]
     agent_manager = session["agent_manager"]
+    print(f"[TRIAL] Session found with {len(agent_manager.get_all_agents())} agents")
     
     return {
         "session_id": session_id,

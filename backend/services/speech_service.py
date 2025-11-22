@@ -14,23 +14,31 @@ class SpeechService:
         }
     
     async def transcribe_audio(self, audio_data: bytes) -> str:
+        print(f"[TRANSCRIBE] Starting transcription...")
+        print(f"[TRANSCRIBE] Audio data size: {len(audio_data)} bytes")
+        print(f"[TRANSCRIBE] Audio data type: {type(audio_data)}")
+        
         try:
-            # Updated to match SDK documentation: pass kwargs directly
-            source = {"buffer": audio_data}
-            
-            response = self.deepgram.listen.prerecorded.v("1").transcribe_file(
-                source,
+            print(f"[TRANSCRIBE] Calling Deepgram API (v5)...")
+            response = self.deepgram.listen.v1.media.transcribe_file(
+                request=audio_data,
                 model="nova-2",
                 smart_format=True,
                 punctuate=True,
                 language="en-US"
             )
             
+            print(f"[TRANSCRIBE] Response received from Deepgram")
+            print(f"[TRANSCRIBE] Response type: {type(response)}")
+            
             transcript = response.results.channels[0].alternatives[0].transcript
+            print(f"[TRANSCRIBE] Transcript extracted: '{transcript}'")
+            print(f"[TRANSCRIBE] Transcript length: {len(transcript)} chars")
             return transcript
         except Exception as e:
-            print(f"Transcription error: {e}")
-            # Fallback for development or if key is invalid
+            print(f"[TRANSCRIBE] ERROR: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
             return "Transcription failed (mock response)"
 
     async def transcribe_stream(self, audio_stream: AsyncIterator[bytes]) -> AsyncIterator[str]:
@@ -38,20 +46,41 @@ class SpeechService:
     
     async def synthesize_speech(self, text: str, role: str = "judge") -> bytes:
         try:
-            voice = self.voice_mapping.get(role, "aura-athena-en")
+            voice = self.voice_mapping.get(role, "aura-asteria-en")
             
-            # Updated to match SDK documentation: pass kwargs directly
-            response = self.deepgram.speak.v("1").generate(
+            print(f"[SPEAK] Synthesizing speech for role: {role}, voice: {voice}")
+            print(f"[SPEAK] Text length: {len(text)} chars")
+            
+            response = self.deepgram.speak.v1.audio.generate(
                 text=text,
-                model="aura-asteria-en"
+                model=voice
             )
             
-            # Get bytes from stream
-            audio_data = response.stream.getvalue()
+            print(f"[SPEAK] Response type: {type(response)}")
+            print(f"[SPEAK] Response attributes: {dir(response)}")
+            
+            if hasattr(response, 'stream'):
+                audio_data = response.stream.getvalue()
+            elif hasattr(response, 'content'):
+                audio_data = response.content
+            elif isinstance(response, bytes):
+                audio_data = response
+            else:
+                audio_bytes = b""
+                for chunk in response:
+                    if isinstance(chunk, bytes):
+                        audio_bytes += chunk
+                    elif hasattr(chunk, 'data'):
+                        audio_bytes += chunk.data
+                audio_data = audio_bytes
+            
+            print(f"[SPEAK] Generated audio: {len(audio_data)} bytes")
             return audio_data
             
         except Exception as e:
-            print(f"Speech synthesis error: {e}")
+            print(f"[SPEAK] ERROR: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
             return b""
     
     def get_voice_for_role(self, role: str) -> str:
