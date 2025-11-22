@@ -45,8 +45,8 @@ export function Transcript({ messages }: TranscriptProps) {
   };
 
   return (
-    <Card className="h-full">
-      <ScrollArea className="h-[400px] p-4" ref={scrollRef}>
+    <Card className="h-full flex flex-col">
+      <ScrollArea className="flex-1 p-4" ref={scrollRef}>
         <div className="space-y-4">
           {messages.length === 0 ? (
             <div className="text-center text-muted-foreground py-8">
