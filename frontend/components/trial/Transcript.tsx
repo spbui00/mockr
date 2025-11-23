@@ -84,14 +84,14 @@ export function Transcript({ messages }: TranscriptProps) {
   return (
     <Card className="h-full flex flex-col overflow-hidden border-none shadow-none pt-4 m-0 relative">
       <div 
-        className="absolute top-0 left-0 right-0 h-48 pointer-events-none z-10"
+        className="absolute top-0 left-0 right-0 h-64 pointer-events-none z-10"
         style={{
-          background: 'linear-gradient(to bottom, white 0%, rgba(255, 255, 255, 0.7) 50%, transparent 100%)'
+          background: 'linear-gradient(to bottom, white 0%, white 10%, rgba(255, 255, 255, 0.8) 40%, transparent 100%)'
         }}
       />
       <div className="flex-1 overflow-hidden relative">
         <ScrollArea className="h-full">
-        <div className="space-y-0">
+        <div className={`space-y-0 ${messages.length > 0 ? 'min-h-full flex flex-col justify-center' : ''}`}>
           {messages.length === 0 ? (
             <div className="text-center text-muted-foreground py-8">
               <p>Trial transcript will appear here</p>
@@ -109,9 +109,9 @@ export function Transcript({ messages }: TranscriptProps) {
                 const isLast = index === messages.length - 1;
                 
                 const totalMessages = messages.length;
-                const fadeThreshold = 10;
+                const fadeThreshold = 3;
                 const opacity = index < fadeThreshold 
-                  ? Math.max(0.15, (index + 1) / fadeThreshold)
+                  ? Math.max(0.3, (index + 1) / fadeThreshold)
                   : 1;
 
                 return (
