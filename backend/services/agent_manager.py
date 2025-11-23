@@ -1,13 +1,19 @@
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from models.agents import AgentRole, AgentConfig, AgentResponse
 from models.trial import RoleType, LegalPropertiesConfig, CaseContextConfig
 from services.openjustice import openjustice_service
+from pyagentspec.agent import Agent
+from pyagentspec.property import Property
+from pyagentspec.llms import OpenAiConfig
 import json
 import re
+import os
+from pathlib import Path
 
 class AgentManager:
     def __init__(self, session_id: str = "", conversation_id: str = "", flow_id: str = ""):
         self.agents: Dict[str, AgentConfig] = {}
+        self.agent_spec_agents: Dict[str, Agent] = {}
         self.conversation_history: List[Dict[str, str]] = []
         self.session_id = session_id
         self.conversation_id = conversation_id
@@ -22,9 +28,11 @@ class AgentManager:
         case_context: CaseContextConfig
     ):
         self.agents = {}
+        self.agent_spec_agents = {}
         
         for role in roles:
-            agent_config = self._create_agent_config(role, legal_context, case_context)
+            agent_spec, agent_config = self._create_agent_config(role, legal_context, case_context)
+            self.agent_spec_agents[role.value] = agent_spec
             self.agents[role.value] = agent_config
     
     def _create_agent_config(
@@ -32,50 +40,81 @@ class AgentManager:
         role: RoleType,
         legal_context: Dict[str, Any],
         case_context: CaseContextConfig
-    ) -> AgentConfig:
+    ) -> Tuple[Agent, AgentConfig]:
+        jurisdiction_property = Property(
+            json_schema={"title": "jurisdiction", "type": "string", "default": legal_context.get('jurisdiction', 'United States')}
+        )
+        legal_areas_property = Property(
+            json_schema={"title": "legal_areas", "type": "array", "items": {"type": "string"}, "default": legal_context.get('legal_areas', [])}
+        )
+        case_context_property = Property(
+            json_schema={"title": "case_context", "type": "string", "default": case_context.description}
+        )
+        
+        llm_config = OpenAiConfig(
+            name="OpenJustice API",
+            model_id="gpt-4o-mini-2024-07-18"
+        )
+        
         role_configs = {
             RoleType.JUDGE: {
                 "name": "Judge Anderson",
-                "system_prompt": self._get_judge_prompt(legal_context, case_context),
+                "system_prompt_template": self._get_judge_prompt_template(),
                 "voice_id": "aura-athena-en",
                 "personality_traits": ["impartial", "authoritative", "procedural", "fair"]
             },
             RoleType.PROSECUTOR: {
                 "name": "District Attorney Martinez",
-                "system_prompt": self._get_prosecutor_prompt(legal_context, case_context),
+                "system_prompt_template": self._get_prosecutor_prompt_template(),
                 "voice_id": "aura-arcas-en",
                 "personality_traits": ["assertive", "methodical", "persuasive", "justice-focused"]
             },
             RoleType.DEFENSE: {
                 "name": "Defense Attorney Chen",
-                "system_prompt": self._get_defense_prompt(legal_context, case_context),
+                "system_prompt_template": self._get_defense_prompt_template(),
                 "voice_id": "aura-angus-en",
                 "personality_traits": ["protective", "analytical", "strategic", "client-focused"]
             }
         }
         
         config = role_configs[role]
-        return AgentConfig(
+        
+        agent_spec = Agent(
+            name=config["name"],
+            system_prompt=config["system_prompt_template"],
+            llm_config=llm_config,
+            inputs=[jurisdiction_property, legal_areas_property, case_context_property]
+        )
+        
+        system_prompt = self._render_system_prompt(
+            config["system_prompt_template"],
+            legal_context,
+            case_context
+        )
+        
+        agent_config = AgentConfig(
             role=AgentRole(role.value),
             name=config["name"],
-            system_prompt=config["system_prompt"],
+            system_prompt=system_prompt,
             voice_id=config["voice_id"],
             personality_traits=config["personality_traits"],
             legal_context=legal_context,
             case_context=case_context.description
         )
+        
+        return agent_spec, agent_config
     
-    def _get_judge_prompt(self, legal_context: Dict[str, Any], case_context: CaseContextConfig) -> str:
-        return f"""You are Judge Anderson, presiding over a {legal_context.get('jurisdiction', 'United States')} court.
+    def _get_judge_prompt_template(self) -> str:
+        return """You are Judge Anderson, presiding over a {{jurisdiction}} court.
 
 ROLE: You are an impartial judge responsible for maintaining courtroom order, making legal rulings, and ensuring fair proceedings.
 
 CASE CONTEXT:
-{case_context.description}
+{{case_context}}
 
 LEGAL FRAMEWORK:
-- Jurisdiction: {legal_context.get('jurisdiction', 'United States')}
-- Applicable Legal Areas: {', '.join(legal_context.get('legal_areas', []))}
+- Jurisdiction: {{jurisdiction}}
+- Applicable Legal Areas: {{legal_areas}}
 
 RESPONSIBILITIES:
 - Maintain courtroom decorum and procedure
@@ -93,17 +132,24 @@ STYLE:
 
 Remember: You are neutral and must not favor either side. Base all decisions on law and procedure."""
     
-    def _get_prosecutor_prompt(self, legal_context: Dict[str, Any], case_context: CaseContextConfig) -> str:
-        return f"""You are District Attorney Martinez, the prosecutor in this {legal_context.get('jurisdiction', 'United States')} court case.
+    def _get_judge_prompt(self, legal_context: Dict[str, Any], case_context: CaseContextConfig) -> str:
+        return self._render_system_prompt(
+            self._get_judge_prompt_template(),
+            legal_context,
+            case_context
+        )
+    
+    def _get_prosecutor_prompt_template(self) -> str:
+        return """You are District Attorney Martinez, the prosecutor in this {{jurisdiction}} court case.
 
 ROLE: You represent the state/government and seek to prove the defendant's guilt beyond a reasonable doubt.
 
 CASE CONTEXT:
-{case_context.description}
+{{case_context}}
 
 LEGAL FRAMEWORK:
-- Jurisdiction: {legal_context.get('jurisdiction', 'United States')}
-- Applicable Legal Areas: {', '.join(legal_context.get('legal_areas', []))}
+- Jurisdiction: {{jurisdiction}}
+- Applicable Legal Areas: {{legal_areas}}
 
 RESPONSIBILITIES:
 - Present evidence against the defendant
@@ -128,17 +174,24 @@ STYLE:
 
 Remember: Your goal is to prove guilt, but always within the bounds of law and ethics."""
     
-    def _get_defense_prompt(self, legal_context: Dict[str, Any], case_context: CaseContextConfig) -> str:
-        return f"""You are Defense Attorney Chen, representing the defendant in this {legal_context.get('jurisdiction', 'United States')} court case.
+    def _get_prosecutor_prompt(self, legal_context: Dict[str, Any], case_context: CaseContextConfig) -> str:
+        return self._render_system_prompt(
+            self._get_prosecutor_prompt_template(),
+            legal_context,
+            case_context
+        )
+    
+    def _get_defense_prompt_template(self) -> str:
+        return """You are Defense Attorney Chen, representing the defendant in this {{jurisdiction}} court case.
 
 ROLE: You are the defendant's advocate, working to protect their rights and achieve the best possible outcome.
 
 CASE CONTEXT:
-{case_context.description}
+{{case_context}}
 
 LEGAL FRAMEWORK:
-- Jurisdiction: {legal_context.get('jurisdiction', 'United States')}
-- Applicable Legal Areas: {', '.join(legal_context.get('legal_areas', []))}
+- Jurisdiction: {{jurisdiction}}
+- Applicable Legal Areas: {{legal_areas}}
 
 RESPONSIBILITIES:
 - Protect defendant's constitutional rights
@@ -162,6 +215,31 @@ STYLE:
 - Balance passion with professionalism
 
 Remember: Everyone deserves a strong defense. Your duty is to your client within the bounds of legal ethics."""
+    
+    def _get_defense_prompt(self, legal_context: Dict[str, Any], case_context: CaseContextConfig) -> str:
+        return self._render_system_prompt(
+            self._get_defense_prompt_template(),
+            legal_context,
+            case_context
+        )
+    
+    def _render_system_prompt(
+        self,
+        template: str,
+        legal_context: Dict[str, Any],
+        case_context: CaseContextConfig
+    ) -> str:
+        jurisdiction = legal_context.get('jurisdiction', 'United States')
+        legal_areas = legal_context.get('legal_areas', [])
+        case_context_str = case_context.description
+        
+        legal_areas_str = ', '.join(legal_areas) if legal_areas else ''
+        
+        prompt = template.replace('{{jurisdiction}}', jurisdiction)
+        prompt = prompt.replace('{{case_context}}', case_context_str)
+        prompt = prompt.replace('{{legal_areas}}', legal_areas_str)
+        
+        return prompt
     
     async def get_agent_response(
         self,
@@ -207,24 +285,8 @@ Remember: Everyone deserves a strong defense. Your duty is to your client within
         print(f"[AgentManager] conversation_id: {self.conversation_id}, trial_flow_id: {self.trial_flow_id}")
         
         try:
-            role_prompts = {
-                "judge": """You are Judge Anderson presiding over a mock trial. You are impartial, 
-maintain courtroom order, make legal rulings based on law and procedure, and ensure fair proceedings. 
-Respond professionally and judiciously to all statements and questions.""",
-                
-                "prosecutor": """You are District Attorney Martinez, the prosecutor in this trial. 
-Your role is to debate effectively, present strong arguments for conviction, identify weaknesses 
-in the defense's position, challenge their claims with facts and legal precedent, and prove guilt 
-beyond reasonable doubt. Be assertive, methodical, and persuasive in your arguments.""",
-                
-                "defense": """You are Defense Attorney Chen, representing the defendant. Your role is 
-to debate effectively, find flaws in the prosecution's arguments, challenge their evidence, 
-present alternative interpretations, protect your client's rights, and create reasonable doubt. 
-Be protective, analytical, and strategic in countering prosecution claims."""
-            }
-            
-            system_prompt = role_prompts.get(agent.role.value, "You are a legal professional in a mock trial.")
-            print(f"[AgentManager] Using system prompt for role: {agent.role.value}")
+            system_prompt = agent.system_prompt
+            print(f"[AgentManager] Using system prompt from Agent Spec for role: {agent.role.value}")
             
             print(f"[AgentManager] Sending message to conversation...")
             await openjustice_service.send_message_to_conversation(
@@ -299,4 +361,70 @@ Be protective, analytical, and strategic in countering prosecution claims."""
     
     def get_all_agents(self) -> Dict[str, AgentConfig]:
         return self.agents
+    
+    def export_agent_specs_to_json(self, output_dir: str = "agent_specs") -> Dict[str, str]:
+        """Export all Agent Spec agents to JSON files.
+        
+        Args:
+            output_dir: Directory to save the JSON files (default: "agent_specs")
+            
+        Returns:
+            Dictionary mapping role names to file paths
+        """
+        os.makedirs(output_dir, exist_ok=True)
+        exported_files = {}
+        
+        for role, agent_spec in self.agent_spec_agents.items():
+            agent_json = agent_spec.to_json()
+            file_path = os.path.join(output_dir, f"{role}_agent.json")
+            
+            with open(file_path, 'w') as f:
+                f.write(agent_json)
+            
+            exported_files[role] = file_path
+            print(f"[AgentManager] Exported {role} agent spec to {file_path}")
+        
+        return exported_files
+    
+    def export_agent_specs_to_yaml(self, output_dir: str = "agent_specs") -> Dict[str, str]:
+        """Export all Agent Spec agents to YAML files.
+        
+        Args:
+            output_dir: Directory to save the YAML files (default: "agent_specs")
+            
+        Returns:
+            Dictionary mapping role names to file paths
+        """
+        try:
+            import yaml
+        except ImportError:
+            raise ImportError("PyYAML is required for YAML export. Install it with: pip install pyyaml")
+        
+        os.makedirs(output_dir, exist_ok=True)
+        exported_files = {}
+        
+        for role, agent_spec in self.agent_spec_agents.items():
+            agent_dict = json.loads(agent_spec.to_json())
+            file_path = os.path.join(output_dir, f"{role}_agent.yaml")
+            
+            with open(file_path, 'w') as f:
+                yaml.dump(agent_dict, f, default_flow_style=False, sort_keys=False)
+            
+            exported_files[role] = file_path
+            print(f"[AgentManager] Exported {role} agent spec to {file_path}")
+        
+        return exported_files
+    
+    def get_agent_spec_json(self, role: str) -> Optional[str]:
+        """Get the JSON representation of an Agent Spec agent.
+        
+        Args:
+            role: The role name (judge, prosecutor, or defense)
+            
+        Returns:
+            JSON string representation of the agent, or None if not found
+        """
+        if role in self.agent_spec_agents:
+            return self.agent_spec_agents[role].to_json()
+        return None
 
