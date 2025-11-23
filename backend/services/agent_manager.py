@@ -374,8 +374,46 @@ Remember: Everyone deserves a strong defense. Your duty is to your client within
         os.makedirs(output_dir, exist_ok=True)
         exported_files = {}
         
+        def serialize_value(v):
+            """Recursively serialize values that might not be JSON serializable."""
+            if hasattr(v, 'model_dump'):
+                return v.model_dump()
+            elif hasattr(v, 'dict'):
+                return v.dict()
+            elif isinstance(v, dict):
+                return {k: serialize_value(val) for k, val in v.items()}
+            elif isinstance(v, (list, tuple)):
+                return [serialize_value(item) for item in v]
+            elif hasattr(v, '__dict__'):
+                return {k: serialize_value(val) for k, val in v.__dict__.items()}
+            else:
+                return str(v) if not isinstance(v, (str, int, float, bool, type(None))) else v
+        
         for role, agent_spec in self.agent_spec_agents.items():
-            agent_json = agent_spec.to_json()
+            try:
+                if hasattr(agent_spec, 'model_dump'):
+                    agent_dict = agent_spec.model_dump(mode='json')
+                elif hasattr(agent_spec, 'dict'):
+                    agent_dict = agent_spec.dict()
+                else:
+                    agent_dict = {k: serialize_value(v) for k, v in agent_spec.__dict__.items()}
+                
+                agent_json = json.dumps(agent_dict, indent=2, default=str)
+            except Exception as e:
+                print(f"[AgentManager] Warning: Could not serialize {role} agent using standard methods: {e}")
+                agent_dict = {
+                    'name': getattr(agent_spec, 'name', role),
+                    'system_prompt': getattr(agent_spec, 'system_prompt', ''),
+                    'inputs': [
+                        {
+                            'title': getattr(prop, 'json_schema', {}).get('title', ''),
+                            'type': getattr(prop, 'json_schema', {}).get('type', ''),
+                        }
+                        for prop in getattr(agent_spec, 'inputs', [])
+                    ] if hasattr(agent_spec, 'inputs') else []
+                }
+                agent_json = json.dumps(agent_dict, indent=2, default=str)
+            
             file_path = os.path.join(output_dir, f"{role}_agent.json")
             
             with open(file_path, 'w') as f:
@@ -403,12 +441,47 @@ Remember: Everyone deserves a strong defense. Your duty is to your client within
         os.makedirs(output_dir, exist_ok=True)
         exported_files = {}
         
+        def serialize_value(v):
+            """Recursively serialize values that might not be YAML serializable."""
+            if hasattr(v, 'model_dump'):
+                return v.model_dump(mode='json')
+            elif hasattr(v, 'dict'):
+                return v.dict()
+            elif isinstance(v, dict):
+                return {k: serialize_value(val) for k, val in v.items()}
+            elif isinstance(v, (list, tuple)):
+                return [serialize_value(item) for item in v]
+            elif hasattr(v, '__dict__'):
+                return {k: serialize_value(val) for k, val in v.__dict__.items()}
+            else:
+                return str(v) if not isinstance(v, (str, int, float, bool, type(None))) else v
+        
         for role, agent_spec in self.agent_spec_agents.items():
-            agent_dict = json.loads(agent_spec.to_json())
+            try:
+                if hasattr(agent_spec, 'model_dump'):
+                    agent_dict = agent_spec.model_dump(mode='json')
+                elif hasattr(agent_spec, 'dict'):
+                    agent_dict = agent_spec.dict()
+                else:
+                    agent_dict = {k: serialize_value(v) for k, v in agent_spec.__dict__.items()}
+            except Exception as e:
+                print(f"[AgentManager] Warning: Could not serialize {role} agent using standard methods: {e}")
+                agent_dict = {
+                    'name': getattr(agent_spec, 'name', role),
+                    'system_prompt': getattr(agent_spec, 'system_prompt', ''),
+                    'inputs': [
+                        {
+                            'title': getattr(prop, 'json_schema', {}).get('title', ''),
+                            'type': getattr(prop, 'json_schema', {}).get('type', ''),
+                        }
+                        for prop in getattr(agent_spec, 'inputs', [])
+                    ] if hasattr(agent_spec, 'inputs') else []
+                }
+            
             file_path = os.path.join(output_dir, f"{role}_agent.yaml")
             
             with open(file_path, 'w') as f:
-                yaml.dump(agent_dict, f, default_flow_style=False, sort_keys=False)
+                yaml.dump(agent_dict, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
             
             exported_files[role] = file_path
             print(f"[AgentManager] Exported {role} agent spec to {file_path}")
@@ -424,7 +497,39 @@ Remember: Everyone deserves a strong defense. Your duty is to your client within
         Returns:
             JSON string representation of the agent, or None if not found
         """
-        if role in self.agent_spec_agents:
-            return self.agent_spec_agents[role].to_json()
-        return None
+        if role not in self.agent_spec_agents:
+            return None
+        
+        agent_spec = self.agent_spec_agents[role]
+        
+        def serialize_value(v):
+            """Recursively serialize values that might not be JSON serializable."""
+            if hasattr(v, 'model_dump'):
+                return v.model_dump(mode='json')
+            elif hasattr(v, 'dict'):
+                return v.dict()
+            elif isinstance(v, dict):
+                return {k: serialize_value(val) for k, val in v.items()}
+            elif isinstance(v, (list, tuple)):
+                return [serialize_value(item) for item in v]
+            elif hasattr(v, '__dict__'):
+                return {k: serialize_value(val) for k, val in v.__dict__.items()}
+            else:
+                return str(v) if not isinstance(v, (str, int, float, bool, type(None))) else v
+        
+        try:
+            if hasattr(agent_spec, 'model_dump'):
+                agent_dict = agent_spec.model_dump(mode='json')
+            elif hasattr(agent_spec, 'dict'):
+                agent_dict = agent_spec.dict()
+            else:
+                agent_dict = {k: serialize_value(v) for k, v in agent_spec.__dict__.items()}
+            
+            return json.dumps(agent_dict, indent=2, default=str)
+        except Exception:
+            agent_dict = {
+                'name': getattr(agent_spec, 'name', role),
+                'system_prompt': getattr(agent_spec, 'system_prompt', ''),
+            }
+            return json.dumps(agent_dict, indent=2, default=str)
 
