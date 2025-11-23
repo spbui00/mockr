@@ -6,9 +6,10 @@ import { Bubble } from '@/components/trial/Bubble';
 import { Transcript } from '@/components/trial/Transcript';
 import { useVoiceRecording } from '@/lib/useVoiceRecording';
 import { Agent, TrialMessage, RoleType } from '@/types';
-import { Loader2, Mic } from 'lucide-react';
+import { Loader2, Mic, ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { motion } from 'framer-motion';
 
 export default function TrialPage() {
   const router = useRouter();
@@ -19,6 +20,7 @@ export default function TrialPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [messages, setMessages] = useState<TrialMessage[]>([]);
   const [currentlySpeakingAgent, setCurrentlySpeakingAgent] = useState<string | null>(null);
+  const [currentlyThinkingAgent, setCurrentlyThinkingAgent] = useState<string | null>(null);
   const [trialInfo, setTrialInfo] = useState<any>(null);
 
   const handleWebSocketMessage = (data: any) => {
@@ -40,21 +42,34 @@ export default function TrialPage() {
       console.log('[TRIAL_PAGE] Transcription received (not adding to messages, waiting for user_message)');
     }
 
+    if (data.type === 'agent_thinking') {
+      if (data.role) {
+        const agent = agents.find((a) => a.role === data.role);
+        const agentName = agent?.name || data.role;
+        console.log('[TRIAL_PAGE] Agent thinking:', agentName);
+        setCurrentlyThinkingAgent(agentName);
+      } else {
+        console.log('[TRIAL_PAGE] All agents thinking');
+        setCurrentlyThinkingAgent('all');
+      }
+    }
+
     if (data.type === 'agent_response') {
-      setCurrentlySpeakingAgent(null);
+      setCurrentlyThinkingAgent(null);
+    }
+
+    if (data.type === 'synthesizing') {
+      const agent = agents.find((a) => a.role === data.role);
+      const speakerName = agent?.name || data.role || 'Agent';
+      console.log('[TRIAL_PAGE] Agent synthesizing speech:', speakerName, 'role:', data.role);
+      setCurrentlySpeakingAgent(speakerName);
     }
 
     if (data.type === 'agent_audio') {
       const agent = agents.find((a) => a.role === data.role);
-      setCurrentlySpeakingAgent(agent?.name || data.role);
-
-      setTimeout(() => {
-        setCurrentlySpeakingAgent(null);
-      }, 5000);
-    }
-
-    if (data.type === 'synthesizing') {
-      setCurrentlySpeakingAgent('Agent');
+      const speakerName = agent?.name || data.role;
+      console.log('[TRIAL_PAGE] Agent audio received:', speakerName, 'role:', data.role, 'agents:', agents.length);
+      setCurrentlySpeakingAgent(speakerName);
     }
   };
 
@@ -63,12 +78,17 @@ export default function TrialPage() {
     isProcessing,
     connectionStatus,
     micPermission,
+    audioAnalyser,
     handlePressStart,
     handlePressEnd,
     requestMicrophonePermission,
   } = useVoiceRecording({
     sessionId,
     onMessage: handleWebSocketMessage,
+    onAudioFinished: () => {
+      console.log('[TRIAL_PAGE] Audio finished, clearing speaking state');
+      setCurrentlySpeakingAgent(null);
+    },
   });
 
   useEffect(() => {
@@ -140,10 +160,48 @@ export default function TrialPage() {
     );
   }
 
+  const handleBackClick = () => {
+    console.log('[TRIAL_PAGE] Back button clicked, trialInfo:', trialInfo);
+    
+    if (trialInfo) {
+      const conversationId = trialInfo.conversation_id || sessionId;
+      const params = new URLSearchParams();
+      if (trialInfo.fact_flow_id) params.append('factFlowId', trialInfo.fact_flow_id);
+      if (trialInfo.trial_flow_id) params.append('trialFlowId', trialInfo.trial_flow_id);
+      if (trialInfo.roles && trialInfo.roles.length > 0) {
+        params.append('roles', trialInfo.roles.join(','));
+      }
+      const queryString = params.toString();
+      const targetUrl = `/fact-gathering/${conversationId}${queryString ? `?${queryString}` : ''}`;
+      console.log('[TRIAL_PAGE] Navigating to:', targetUrl);
+      router.push(targetUrl);
+    } else {
+      console.log('[TRIAL_PAGE] No trialInfo, using sessionId');
+      router.push(`/fact-gathering/${sessionId}`);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-white p-6 lg:p-10">
+    <div className="h-screen bg-white p-8 lg:p-10 overflow-hidden relative">
+      <motion.div
+        onClick={handleBackClick}
+        className="fixed left-0 top-1/2 -translate-y-1/2 w-32 h-[50vh] z-50 flex items-center justify-center group"
+        style={{ cursor: 'pointer' }}
+        initial={{ opacity: 0 }}
+        whileHover={{ opacity: 1 }}
+        transition={{ duration: 0.2 }}
+      >
+        <motion.div
+          className="pointer-events-none"
+          initial={{ scale: 0.5, opacity: 0 }}
+          whileHover={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 0.2 }}
+        >
+          <ChevronLeft className="w-32 h-32 text-primary/60" strokeWidth={1.5} />
+        </motion.div>
+      </motion.div>
       <div className="flex flex-col lg:flex-row gap-8 h-full">
-        <div className="flex flex-col gap-6 w-full lg:w-1/2">
+        <div className="flex flex-col gap-14 w-full lg:w-2/5 py-10">
           <div className="flex flex-wrap items-center justify-center gap-10 py-4">
             {agents.map((agent) => (
               <Bubble
@@ -151,6 +209,11 @@ export default function TrialPage() {
                 agent={agent}
                 isSpeaking={
                   currentlySpeakingAgent?.toLowerCase().includes(agent.role.toLowerCase()) ||
+                  false
+                }
+                isThinking={
+                  currentlyThinkingAgent === 'all' ||
+                  currentlyThinkingAgent?.toLowerCase().includes(agent.role.toLowerCase()) ||
                   false
                 }
               />
@@ -165,6 +228,7 @@ export default function TrialPage() {
               onPressStart={handlePressStart}
               onPressEnd={handlePressEnd}
               disabled={connectionStatus !== 'connected' || isProcessing || micPermission !== 'granted'}
+              audioAnalyser={audioAnalyser || undefined}
             />
           </div>
 
@@ -198,33 +262,19 @@ export default function TrialPage() {
 
             {micPermission === 'granted' && (
               <div className="text-center space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  {connectionStatus === 'connecting' && 'Connecting...'}
-                  {connectionStatus === 'connected' && !isRecording && !isProcessing && (
-                    <>Hold the bubble or press <kbd className="px-2 py-1 text-xs font-semibold bg-muted border border-border rounded">Space</kbd> to speak</>
-                  )}
-                  {connectionStatus === 'connected' && isRecording && 'Recording... Release to send'}
-                  {connectionStatus === 'disconnected' && 'Disconnected - Please refresh'}
-                </p>
                 {isProcessing && (
                   <div className="flex items-center justify-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin text-primary" />
                     <span className="text-sm text-muted-foreground">Processing...</span>
                   </div>
                 )}
-                {currentlySpeakingAgent && (
-                  <p className="text-sm text-primary font-medium">
-                    {currentlySpeakingAgent} is speaking...
-                  </p>
-                )}
               </div>
             )}
           </div>
         </div>
 
-        <div className="w-full lg:w-1/2 flex flex-col">
-          <h2 className="text-2xl font-bold mb-4">Trial Transcript</h2>
-          <div className="flex-1">
+        <div className="w-full lg:w-3/5 flex flex-col min-h-0">
+          <div className="flex-1 min-h-0">
             <Transcript messages={messages} />
           </div>
         </div>

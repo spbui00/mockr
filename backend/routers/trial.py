@@ -54,6 +54,7 @@ async def create_trial(request: CreateTrialRequest) -> Dict[str, Any]:
             "legal_properties": request.legal_properties,
             "conversation_id": request.conversationId,
             "trial_flow_id": request.flowId,
+            "fact_flow_id": request.factFlowId,
             "legal_context": legal_context,
             "agent_manager": agent_manager,
             "messages": [],
@@ -96,6 +97,10 @@ async def get_trial_session(session_id: str) -> Dict[str, Any]:
     return {
         "session_id": session_id,
         "status": session["status"],
+        "conversation_id": session.get("conversation_id"),
+        "trial_flow_id": session.get("trial_flow_id"),
+        "fact_flow_id": session.get("fact_flow_id"),
+        "roles": [role.role.value for role in session.get("roles", [])],
         "agents": [
             {
                 "role": agent.role.value,

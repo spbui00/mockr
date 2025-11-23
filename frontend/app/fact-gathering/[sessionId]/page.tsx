@@ -103,6 +103,7 @@ export default function FactGatheringPage() {
       const trialRequest = {
         conversationId,
         flowId: trialFlowId,
+        factFlowId: factFlowId,
         roles: selectedRoles.map((role) => ({
           role,
           enabled: true,

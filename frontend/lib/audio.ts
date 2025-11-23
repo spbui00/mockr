@@ -2,6 +2,8 @@ export class AudioRecorder {
   private mediaRecorder: MediaRecorder | null = null;
   private audioChunks: Blob[] = [];
   private stream: MediaStream | null = null;
+  private audioContext: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
 
   async checkPermission(): Promise<boolean> {
     try {
@@ -31,6 +33,12 @@ export class AudioRecorder {
           sampleRate: 16000
         } 
       });
+      
+      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const source = this.audioContext.createMediaStreamSource(this.stream);
+      this.analyser = this.audioContext.createAnalyser();
+      this.analyser.fftSize = 256;
+      source.connect(this.analyser);
       
       const mimeType = MediaRecorder.isTypeSupported('audio/webm') 
         ? 'audio/webm' 
@@ -86,11 +94,21 @@ export class AudioRecorder {
       if (this.stream) {
         this.stream.getTracks().forEach(track => track.stop());
       }
+      
+      if (this.audioContext) {
+        this.audioContext.close();
+        this.audioContext = null;
+        this.analyser = null;
+      }
     });
   }
 
   isRecording(): boolean {
     return this.mediaRecorder?.state === 'recording';
+  }
+
+  getAnalyser(): AnalyserNode | null {
+    return this.analyser;
   }
 }
 

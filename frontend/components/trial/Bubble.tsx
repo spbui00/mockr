@@ -1,54 +1,66 @@
 'use client';
 
 import { Agent, RoleType } from '@/types';
-import { Mic } from 'lucide-react';
 import { motion } from 'framer-motion';
+import React from 'react';
+import ThreeVisualizer from '@/components/trial/ThreeVisualizer';
 
 interface BubbleProps {
   agent?: Agent;
   isSpeaking: boolean;
+  isThinking?: boolean;
   isUser?: boolean;
   speaker?: boolean;
   onPressStart?: () => void;
   onPressEnd?: () => void;
   disabled?: boolean;
+  audioAnalyser?: AnalyserNode;
 }
 
 const baseThemes = {
   [RoleType.JUDGE]: {
-    outer: 'from-blue-400 via-cyan-400 to-indigo-600',
-    inner: 'from-blue-200/60 via-cyan-200/40 to-purple-300/40',
-    glow: 'shadow-[0_30px_60px_rgba(59,130,246,0.5)]',
+    colors: { r: 0, g: 0.32, b: 0.85 },
+    bgGradient: 'from-blue-500/20 via-cyan-500/10 to-indigo-600/20',
+    glowColor: 'rgba(0, 82, 213, 0.44)',
   },
   [RoleType.PROSECUTOR]: {
-    outer: 'from-rose-400 via-pink-400 to-orange-500',
-    inner: 'from-rose-200/60 via-pink-200/40 to-amber-300/40',
-    glow: 'shadow-[0_30px_60px_rgba(244,114,182,0.45)]',
+    colors: { r: 0.85, g: 0, b: 0 },
+    bgGradient: 'from-rose-500/20 via-pink-500/10 to-orange-500/20',
+    glowColor: 'rgba(197, 0, 0, 0.73)',
   },
   [RoleType.DEFENSE]: {
-    outer: 'from-emerald-400 via-teal-400 to-cyan-500',
-    inner: 'from-emerald-200/60 via-teal-200/40 to-cyan-200/40',
-    glow: 'shadow-[0_30px_60px_rgba(16,185,129,0.45)]',
+    colors: { r: 0.25, g: 0.85, b: 0.64 },
+    bgGradient: 'from-emerald-500/20 via-teal-500/10 to-cyan-500/20',
+    glowColor: 'rgba(0, 181, 88, 0.33)',
   },
 };
 
 const userTheme = {
-  outer: 'from-purple-400 via-fuchsia-400 to-blue-500',
-  inner: 'from-purple-200/60 via-fuchsia-200/40 to-cyan-200/40',
-  glow: 'shadow-[0_30px_60px_rgba(168,85,247,0.45)]',
+  colors: { r: 0.35, g: 0.001, b: 0.67 },
+  bgGradient: 'from-purple-500/20 via-fuchsia-500/10 to-blue-500/20',
+  glowColor: 'rgba(88, 1, 169, 0.21)',
 };
 
 const speakerTheme = {
-  outer: 'from-[#3f9bff] via-[#9b5bff] to-[#ff5bbd]',
-  inner: 'from-white/50 via-[#9bbcff1a] to-white/5',
-  glow: 'shadow-[0_25px_70px_rgba(99,102,241,0.55)]',
+  colors: { r: 0.001, g: 0.02, b: 0.85 },
+  bgGradient: 'from-blue-500/20 via-violet-500/10 to-pink-500/20',
+  glowColor: 'rgba(2, 6, 217, 0.54)', // Slightly increased opacity for better glow
 };
 
-export function Bubble({ agent, isSpeaking, isUser = false, speaker = false, onPressStart, onPressEnd, disabled = false }: BubbleProps) {
+export function Bubble({ 
+  agent, 
+  isSpeaking, 
+  isThinking = false,
+  isUser = false, 
+  speaker = false, 
+  onPressStart, 
+  onPressEnd, 
+  disabled = false,
+  audioAnalyser 
+}: BubbleProps) {
   const theme =
     speaker ? speakerTheme : isUser ? userTheme : baseThemes[agent?.role as RoleType] ?? baseThemes[RoleType.JUDGE];
   const name = isUser ? 'You' : agent?.name ?? 'Agent';
-  const initial = isUser ? 'U' : agent?.name ? agent.name.charAt(0) : 'A';
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (!disabled && onPressStart) {
@@ -80,150 +92,117 @@ export function Bubble({ agent, isSpeaking, isUser = false, speaker = false, onP
 
   return (
     <div className="flex flex-col items-center">
-      <div className="relative w-36 h-36">
+      <motion.div 
+        className="relative w-52 h-52"
+        animate={isSpeaking ? { scale: [1, 1.05, 1] } : { scale: 1 }}
+        transition={{ 
+          duration: 2, 
+          repeat: isSpeaking ? Infinity : 0, 
+          ease: "easeInOut",
+          scale: { duration: 0.3 }
+        }}
+      >
+        {/* 1. Ambient Background Glow Layer */}
+        {/* This layer sits behind the bubble and creates the soft light on the background */}
         <motion.div
-          className={`absolute inset-0 rounded-full bg-gradient-to-br ${theme.outer} ${theme.glow} backdrop-blur-xl border border-white/20 ${speaker && !disabled ? 'cursor-pointer select-none' : ''} ${disabled ? 'opacity-50' : ''}`}
+          className={`absolute inset-14 rounded-full ${disabled ? 'opacity-50' : ''}`}
+          style={{
+            boxShadow: isThinking 
+              ? `0 0 80px 50px ${theme.glowColor}` 
+              : `0 0 60px 40px ${theme.glowColor}`,
+          }}
           animate={
-            isSpeaking
-              ? {
-                  scale: [0.98, 1.03, 0.98],
+            isThinking 
+              ? { 
+                  opacity: [0.4, 1, 0.4],
+                  scale: [1, 1.1, 1]
                 }
-              : {
-                  scale: [1, 1.01, 1],
-                }
+              : { opacity: 0.7, scale: 1 }
           }
           transition={{
-            duration: isSpeaking ? 1.4 : 4,
-            repeat: Infinity,
-            ease: 'easeInOut',
+            duration: 1.2,
+            repeat: isThinking ? Infinity : 0,
+            ease: "easeInOut"
           }}
+        />
+
+        {/* 2. Main Bubble Container */}
+        {/* This contains the 3D visualizer and clips it to a circle */}
+        <div
+          className={`relative w-full h-full rounded-full overflow-hidden ${speaker && !disabled ? 'cursor-pointer select-none' : ''} ${disabled ? 'opacity-50' : ''}`}
+          // Add a subtle border to define the edge of the bubble against the glow
           onMouseDown={handleMouseDown}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
         >
-          <motion.div
-            className="absolute inset-0 rounded-full"
-            style={{
-              background: `radial-gradient(circle at 30% 30%, rgba(255,255,255,0.9), transparent 40%)`,
-            }}
-            animate={{
-              rotate: [0, 360],
-            }}
-            transition={{
-              duration: 10,
-              repeat: Infinity,
-              ease: 'linear',
-            }}
-          />
-
-          <motion.div
-            className={`absolute inset-0 rounded-full bg-gradient-to-br ${theme.inner}`}
-            animate={{
-              rotate: [0, 360],
-            }}
-            transition={{
-              duration: 14,
-              repeat: Infinity,
-              ease: 'linear',
-            }}
-          />
-
-          <motion.div
-            className="absolute inset-1 rounded-full border border-white/30 mix-blend-screen"
-            animate={{
-              opacity: [0.7, 0.4, 0.7],
-            }}
-            transition={{
-              duration: 3,
-              repeat: Infinity,
-              ease: 'easeInOut',
-            }}
-          />
-
-          <div className="relative z-10 h-full flex items-center justify-center">
-            {speaker ? (
-              <motion.div
-                animate={
-                  isSpeaking
-                    ? {
-                        scale: [1, 1.1, 1],
-                        opacity: [0.7, 1, 0.7],
-                      }
-                    : { opacity: 0.9 }
-                }
-                transition={{ duration: 0.8, repeat: isSpeaking ? Infinity : 0 }}
-                className="text-white"
-              >
-                <Mic className="h-10 w-10 drop-shadow-lg" />
-              </motion.div>
-            ) : (
-              <motion.span
-                className="text-white font-bold text-4xl drop-shadow"
-                animate={
-                  isSpeaking
-                    ? {
-                        scale: [1, 1.1, 1],
-                        opacity: [0.8, 1, 0.8],
-                      }
-                    : { opacity: 0.9 }
-                }
-                transition={{
-                  duration: 0.8,
-                  repeat: isSpeaking ? Infinity : 0,
-                }}
-              >
-                {initial}
-              </motion.span>
-            )}
+          {/* ThreeVisualizer now fills the entire container (removed inset-4) */}
+          <div className="absolute inset-4"> 
+              <ThreeVisualizer 
+                isSpeaking={isSpeaking} 
+                theme={theme}
+                audioAnalyser={audioAnalyser}
+              />
           </div>
-        </motion.div>
+          
+        </div>
 
+        {/* 3. Ripple Effects (Outer rings) */}
         {isSpeaking && (
           <>
             <motion.div
-              className="absolute inset-0 rounded-full border border-white/40"
+              className="absolute inset-0 rounded-full border-2 border-white/30 pointer-events-none"
               animate={{
-                scale: [1, 1.25, 1],
-                opacity: [0.5, 0, 0.5],
+                scale: [1, 1.3],
+                opacity: [0.6, 0],
               }}
               transition={{
-                duration: 1.6,
+                duration: 2,
                 repeat: Infinity,
-                ease: 'easeInOut',
+                ease: 'easeOut',
               }}
             />
             <motion.div
-              className="absolute inset-0 rounded-full border border-white/30"
+              className="absolute inset-0 rounded-full border-2 border-white/20 pointer-events-none"
               animate={{
-                scale: [1, 1.45, 1],
-                opacity: [0.35, 0, 0.35],
+                scale: [1, 1.5],
+                opacity: [0.4, 0],
               }}
               transition={{
-                duration: 1.6,
+                duration: 2,
                 repeat: Infinity,
-                ease: 'easeInOut',
-                delay: 0.3,
+                ease: 'easeOut',
+                delay: 0.4,
               }}
             />
           </>
         )}
-      </div>
+      </motion.div>
 
-      <div className="mt-4 text-center">
-        <p className="font-semibold text-lg">{speaker ? 'Your Mic' : name}</p>
-        {!speaker && !isUser && <p className="text-sm text-muted-foreground capitalize">{agent?.role}</p>}
+      <div className="mt-6 text-center">
+        <p className="font-semibold text-xl">{speaker ? 'Your Mic' : name}</p>
+        {!speaker && !isUser && <p className="text-sm text-muted-foreground capitalize mt-1">{agent?.role}</p>}
         {speaker && (
-          <p className="text-sm text-muted-foreground">
-            {isSpeaking ? 'Listening...' : 'Tap mic to speak'}
+          <p className="text-sm text-muted-foreground mt-1">
+            {isSpeaking ? 'Listening...' : <>Hold the bubble or press <kbd className="px-2 py-1 text-xs font-semibold bg-muted border border-border rounded">Space</kbd> to speak</>}
           </p>
+        )}
+        {isThinking && !isSpeaking && !speaker && (
+          <motion.p
+            className="text-sm font-semibold mt-2"
+            style={{ color: theme.glowColor }}
+            animate={{ opacity: [0.6, 1, 0.6] }}
+            transition={{ duration: 1.2, repeat: Infinity }}
+          >
+            Thinking...
+          </motion.p>
         )}
         {isSpeaking && (
           <motion.p
-            className="text-xs text-primary font-medium mt-1"
+            className="text-xs text-primary font-medium mt-2"
             animate={{ opacity: [1, 0.5, 1] }}
-            transition={{ duration: 1, repeat: Infinity }}
+            transition={{ duration: 1.2, repeat: Infinity }}
           >
             {speaker ? 'Capturing audio' : 'Speaking...'}
           </motion.p>
@@ -232,4 +211,3 @@ export function Bubble({ agent, isSpeaking, isUser = false, speaker = false, onP
     </div>
   );
 }
-

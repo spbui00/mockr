@@ -7,13 +7,15 @@ import { TrialWebSocket } from '@/lib/websocket';
 interface UseVoiceRecordingProps {
   sessionId: string;
   onMessage: (data: any) => void;
+  onAudioFinished?: () => void;
 }
 
-export function useVoiceRecording({ sessionId, onMessage }: UseVoiceRecordingProps) {
+export function useVoiceRecording({ sessionId, onMessage, onAudioFinished }: UseVoiceRecordingProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const [micPermission, setMicPermission] = useState<'granted' | 'denied' | 'prompt'>('prompt');
+  const [audioAnalyser, setAudioAnalyser] = useState<AnalyserNode | null>(null);
 
   const recorderRef = useRef<AudioRecorder | null>(null);
   const wsRef = useRef<TrialWebSocket | null>(null);
@@ -79,13 +81,19 @@ export function useVoiceRecording({ sessionId, onMessage }: UseVoiceRecordingPro
   };
 
   const handleAgentAudio = async (audioBase64: string) => {
-    if (isPlayingRef.current) return;
+    if (isPlayingRef.current) {
+      console.log('[VOICE] Audio already playing, skipping');
+      return;
+    }
 
+    console.log('[VOICE] Starting audio playback, length:', audioBase64.length);
     isPlayingRef.current = true;
     try {
       await playAudioFromBase64(audioBase64);
+      console.log('[VOICE] Audio playback finished');
+      onAudioFinished?.();
     } catch (error) {
-      console.error('Error playing audio:', error);
+      console.error('[VOICE] Error playing audio:', error);
     } finally {
       isPlayingRef.current = false;
     }
@@ -97,6 +105,8 @@ export function useVoiceRecording({ sessionId, onMessage }: UseVoiceRecordingPro
     try {
       await recorderRef.current.start();
       setIsRecording(true);
+      const analyser = recorderRef.current.getAnalyser();
+      setAudioAnalyser(analyser);
     } catch (error: any) {
       console.error('[VOICE] Error starting recording:', error);
       const message = error.message || 'Failed to access microphone. Please check permissions.';
@@ -110,6 +120,7 @@ export function useVoiceRecording({ sessionId, onMessage }: UseVoiceRecordingPro
     try {
       const audioBlob = await recorderRef.current.stop();
       setIsRecording(false);
+      setAudioAnalyser(null);
 
       if (audioBlob.size < 1000) {
         return;
@@ -147,6 +158,7 @@ export function useVoiceRecording({ sessionId, onMessage }: UseVoiceRecordingPro
     isProcessing,
     connectionStatus,
     micPermission,
+    audioAnalyser,
     handlePressStart,
     handlePressEnd,
     requestMicrophonePermission,

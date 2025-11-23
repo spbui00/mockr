@@ -46,6 +46,7 @@ class CaseContextConfig(BaseModel):
 class CreateTrialRequest(BaseModel):
     conversationId: str
     flowId: str
+    factFlowId: Optional[str] = None
     roles: List[RoleConfig]
     legal_properties: Optional[LegalPropertiesConfig] = None
 
