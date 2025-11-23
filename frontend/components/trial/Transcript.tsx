@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card } from '@/components/ui/card';
 import { TrialMessage, RoleType } from '@/types';
@@ -43,25 +43,167 @@ const getRoleIcon = (message: TrialMessage) => {
 };
 
 export function Transcript({ messages }: TranscriptProps) {
-  const scrollViewportRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const [shouldAlignTop, setShouldAlignTop] = useState(false);
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+  const [initialHeight, setInitialHeight] = useState<number>(800);
+  const [contentHeight, setContentHeight] = useState<number>(0);
 
-  const scrollToBottom = () => {
-    if (messagesEndRef.current) {
+  const getViewport = () => {
+    if (!scrollAreaRef.current) return null;
+    return scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null;
+  };
+
+  const contentExceedsViewport = () => {
+    const viewport = getViewport();
+    if (!viewport || !contentRef.current) return false;
+    return contentRef.current.scrollHeight > viewport.clientHeight;
+  };
+
+  const shouldAutoScroll = () => {
+    if (!contentExceedsViewport()) return false;
+    
+    const viewport = getViewport();
+    if (!viewport) return false;
+    
+    const scrollTop = viewport.scrollTop;
+    const scrollHeight = viewport.scrollHeight;
+    const viewportHeight = viewport.clientHeight;
+    const threshold = 100;
+    
+    return scrollHeight - scrollTop - viewportHeight < threshold;
+  };
+
+  const scrollToBottom = (force: boolean = false) => {
+    const viewport = getViewport();
+    if (!viewport || !messagesEndRef.current) return;
+    
+    if (force || shouldAutoScroll()) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   };
 
   useEffect(() => {
-    scrollToBottom();
+    const checkContentHeight = () => {
+      const viewport = getViewport();
+      if (!viewport) {
+        setShouldAlignTop(false);
+        setViewportHeight(null);
+        return;
+      }
+      
+      if (viewport.style.height !== '100%') {
+        viewport.style.height = '100%';
+      }
+      
+      const height = viewport.clientHeight || viewport.offsetHeight;
+      setViewportHeight(height);
+      
+      if (contentRef.current) {
+        const scrollHeight = contentRef.current.scrollHeight;
+        setContentHeight(scrollHeight);
+        setShouldAlignTop(scrollHeight > height);
+      }
+    };
+    
+    checkContentHeight();
+    const timeoutId = setTimeout(checkContentHeight, 100);
+    const timeoutId2 = setTimeout(checkContentHeight, 300);
+    const timeoutId3 = setTimeout(checkContentHeight, 500);
+    
+    const contentElement = contentRef.current;
+    const viewport = getViewport();
+    
+    if (!viewport) {
+      return () => {
+        clearTimeout(timeoutId);
+        clearTimeout(timeoutId2);
+        clearTimeout(timeoutId3);
+      };
+    }
+    
+    const resizeObserver = new ResizeObserver(() => {
+      checkContentHeight();
+    });
+    
+    resizeObserver.observe(viewport);
+    if (contentElement) {
+      resizeObserver.observe(contentElement);
+    }
+    
+    return () => {
+      clearTimeout(timeoutId);
+      clearTimeout(timeoutId2);
+      clearTimeout(timeoutId3);
+      resizeObserver.disconnect();
+    };
   }, [messages]);
 
   useEffect(() => {
-    const lastMessage = messages[messages.length - 1];
-    if (lastMessage) {
-      scrollToBottom();
+    if (typeof window !== 'undefined') {
+      setInitialHeight(window.innerHeight * 0.8);
     }
-  }, [messages.length > 0 ? messages[messages.length - 1]?.content : null]);
+    
+    const initViewport = () => {
+      const viewport = getViewport();
+      if (viewport) {
+        if (viewport.style.height !== '100%') {
+          viewport.style.height = '100%';
+        }
+        const height = viewport.clientHeight || viewport.offsetHeight || viewport.getBoundingClientRect().height;
+        if (height > 0) {
+          setViewportHeight(height);
+        } else {
+          const parent = viewport.parentElement;
+          if (parent) {
+            const parentHeight = parent.clientHeight || parent.offsetHeight;
+            if (parentHeight > 0) {
+              setViewportHeight(parentHeight);
+            }
+          }
+        }
+      }
+    };
+    
+    initViewport();
+    const timeoutId = setTimeout(initViewport, 50);
+    const timeoutId2 = setTimeout(initViewport, 200);
+    const timeoutId3 = setTimeout(initViewport, 500);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      clearTimeout(timeoutId2);
+      clearTimeout(timeoutId3);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      const isAgentMessage = lastMessage?.type === 'agent';
+      
+      const scroll = () => {
+        if (isAgentMessage) {
+          scrollToBottom(true);
+        } else {
+          scrollToBottom(false);
+        }
+      };
+      
+      const timeoutId = setTimeout(scroll, 50);
+      const timeoutId2 = setTimeout(scroll, 150);
+      const timeoutId3 = setTimeout(scroll, 300);
+      
+      return () => {
+        clearTimeout(timeoutId);
+        clearTimeout(timeoutId2);
+        clearTimeout(timeoutId3);
+      };
+    }
+  }, [messages.length, messages.length > 0 ? messages[messages.length - 1]?.id : null]);
 
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
@@ -84,14 +226,26 @@ export function Transcript({ messages }: TranscriptProps) {
   return (
     <Card className="h-full flex flex-col overflow-hidden border-none shadow-none pt-4 m-0 relative">
       <div 
-        className="absolute top-0 left-0 right-0 h-64 pointer-events-none z-10"
+        className="absolute top-0 left-0 right-0 h-28 pointer-events-none z-10"
         style={{
-          background: 'linear-gradient(to bottom, white 0%, white 10%, rgba(255, 255, 255, 0.8) 40%, transparent 100%)'
+          background: 'linear-gradient(to bottom, white 0%, white 10%, rgba(255, 255, 255, 0.8) 30%, rgba(255, 255, 255, 0.4) 50%, transparent 65%)'
         }}
       />
       <div className="flex-1 overflow-hidden relative">
-        <ScrollArea className="h-full">
-        <div className={`space-y-0 ${messages.length > 0 ? 'min-h-full flex flex-col justify-center' : ''}`}>
+        <ScrollArea className="h-full w-full" ref={scrollAreaRef}>
+        <div 
+          ref={wrapperRef}
+          className="flex justify-center px-4 w-full" 
+          style={{ 
+            display: 'flex',
+            height: viewportHeight ? `${viewportHeight}px` : `${initialHeight}px`,
+            minHeight: viewportHeight ? `${viewportHeight}px` : `${initialHeight}px`,
+            alignItems: shouldAlignTop ? 'flex-start' : 'center',
+            justifyContent: 'center',
+            boxSizing: 'border-box'
+          }}
+        >
+        <div className="space-y-0 w-full max-w-3xl" ref={contentRef}>
           {messages.length === 0 ? (
             <div className="text-center text-muted-foreground py-8">
               <p>Trial transcript will appear here</p>
@@ -108,11 +262,15 @@ export function Transcript({ messages }: TranscriptProps) {
                 const boxColorClass = messageBoxColors[roleKey];
                 const isLast = index === messages.length - 1;
                 
-                const totalMessages = messages.length;
-                const fadeThreshold = 3;
-                const opacity = index < fadeThreshold 
-                  ? Math.max(0.3, (index + 1) / fadeThreshold)
-                  : 1;
+                const shouldFade = viewportHeight && contentHeight > viewportHeight * 0.9;
+                
+                let opacity = 1;
+                if (shouldFade) {
+                  const fadeThreshold = 3;
+                  if (index < fadeThreshold) {
+                    opacity = Math.max(0.3, (index + 1) / fadeThreshold);
+                  }
+                }
 
                 return (
                   <div 
@@ -150,6 +308,7 @@ export function Transcript({ messages }: TranscriptProps) {
               <div ref={messagesEndRef} />
             </>
           )}
+        </div>
         </div>
         </ScrollArea>
       </div>

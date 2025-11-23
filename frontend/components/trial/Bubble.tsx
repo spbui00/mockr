@@ -93,19 +93,19 @@ export function Bubble({
   return (
     <div className="flex flex-col items-center">
       <motion.div 
-        className="relative w-52 h-52"
-        animate={isSpeaking ? { scale: [1, 1.05, 1] } : { scale: 1 }}
+        className="relative w-80 h-80"
+        animate={isSpeaking ? { scale: [1, 1.08, 1] } : { scale: 1 }}
         transition={{ 
-          duration: 2, 
+          duration: 1.5, 
           repeat: isSpeaking ? Infinity : 0, 
           ease: "easeInOut",
-          scale: { duration: 0.3 }
+          scale: { duration: 0.2 }
         }}
       >
         {/* 1. Ambient Background Glow Layer */}
         {/* This layer sits behind the bubble and creates the soft light on the background */}
         <motion.div
-          className={`absolute inset-14 rounded-full ${disabled ? 'opacity-50' : ''}`}
+          className={`absolute inset-32 rounded-full ${disabled ? 'opacity-50' : ''}`}
           style={{
             boxShadow: isThinking 
               ? `0 0 80px 50px ${theme.glowColor}` 
@@ -129,21 +129,19 @@ export function Bubble({
         {/* 2. Main Bubble Container */}
         {/* This contains the 3D visualizer and clips it to a circle */}
         <div
-          className={`relative w-full h-full rounded-full overflow-hidden ${speaker && !disabled ? 'cursor-pointer select-none' : ''} ${disabled ? 'opacity-50' : ''}`}
-          // Add a subtle border to define the edge of the bubble against the glow
+          className={`relative w-full h-full rounded-full overflow-visible ${speaker && !disabled ? 'cursor-pointer select-none' : ''} ${disabled ? 'opacity-50' : ''}`}
           onMouseDown={handleMouseDown}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
         >
-          {/* ThreeVisualizer now fills the entire container (removed inset-4) */}
-          <div className="absolute inset-4"> 
-              <ThreeVisualizer 
-                isSpeaking={isSpeaking} 
-                theme={theme}
-                audioAnalyser={audioAnalyser}
-              />
+          <div className="absolute inset-10"> 
+            <ThreeVisualizer 
+              isSpeaking={isSpeaking} 
+              theme={theme}
+              audioAnalyser={audioAnalyser}
+            />
           </div>
           
         </div>
@@ -180,8 +178,8 @@ export function Bubble({
         )}
       </motion.div>
 
-      <div className="mt-6 text-center">
-        <p className="font-semibold text-xl">{speaker ? 'Your Mic' : name}</p>
+      <div className="text-center">
+        <p className="font-semibold text-xl mt-[-30px]">{speaker ? 'You' : name}</p>
         {!speaker && !isUser && <p className="text-sm text-muted-foreground capitalize mt-1">{agent?.role}</p>}
         {speaker && (
           <p className="text-sm text-muted-foreground mt-1">

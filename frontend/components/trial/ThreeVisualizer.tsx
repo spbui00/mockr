@@ -84,7 +84,7 @@ const vertexShader = `
 
   void main() {
     float noise = cnoise(position + u_time);
-    float distortion = (u_frequency / 50.0) * noise; 
+    float distortion = (u_frequency / 40.0) * noise; 
     vec3 newPosition = position + (normal * distortion);
     vDistortion = noise;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
@@ -138,7 +138,7 @@ const AudioMesh = ({
       audioAnalyser.getByteFrequencyData(dataArray);
       const lowerHalf = dataArray.slice(0, dataArray.length / 2);
       const average = lowerHalf.reduce((a, b) => a + b, 0) / lowerHalf.length;
-      targetFreq = average;
+      targetFreq = average * 1.5;
     } else if (isSpeaking) {
       targetFreq = Math.sin(state.clock.getElapsedTime() * 4) * 20 + 30;
     } else {
@@ -146,7 +146,7 @@ const AudioMesh = ({
     }
 
     const currentFreq = material.uniforms.u_frequency.value;
-    material.uniforms.u_frequency.value = THREE.MathUtils.lerp(currentFreq, targetFreq, 0.1);
+    material.uniforms.u_frequency.value = THREE.MathUtils.lerp(currentFreq, targetFreq, 0.25);
   });
 
   return (
@@ -173,7 +173,7 @@ export default function ThreeVisualizer({
 }) {
   return (
     <Canvas 
-      camera={{ position: [0, 0, 8], fov: 45 }} 
+      camera={{ position: [0, 0, 10], fov: 45 }} 
       gl={{ alpha: true, antialias: true }}
       className="w-full h-full"
     >

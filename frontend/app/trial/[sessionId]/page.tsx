@@ -201,8 +201,8 @@ export default function TrialPage() {
         </motion.div>
       </motion.div>
       <div className="flex flex-col lg:flex-row gap-8 h-full">
-        <div className="flex flex-col gap-14 w-full lg:w-2/5 py-10">
-          <div className="flex flex-wrap items-center justify-center gap-10 py-4">
+        <div className="flex flex-col gap-0 w-full lg:w-2/5 py-0">
+          <div className="flex flex-wrap items-center justify-center gap-0">
             {agents.map((agent) => (
               <Bubble
                 key={agent.role}
