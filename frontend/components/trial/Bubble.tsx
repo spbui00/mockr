@@ -94,12 +94,12 @@ export function Bubble({
     <div className="flex flex-col items-center">
       <motion.div 
         className="relative w-80 h-80"
-        animate={isSpeaking ? { scale: [1, 1.08, 1] } : { scale: 1 }}
+        animate={isSpeaking ? { scale: [1, 1.15, 1] } : { scale: 1 }}
         transition={{ 
-          duration: 1.5, 
+          duration: 0.8, 
           repeat: isSpeaking ? Infinity : 0, 
           ease: "easeInOut",
-          scale: { duration: 0.2 }
+          scale: { duration: 0.15 }
         }}
       >
         {/* 1. Ambient Background Glow Layer */}
@@ -107,12 +107,19 @@ export function Bubble({
         <motion.div
           className={`absolute inset-32 rounded-full ${disabled ? 'opacity-50' : ''}`}
           style={{
-            boxShadow: isThinking 
-              ? `0 0 80px 50px ${theme.glowColor}` 
+            boxShadow: isSpeaking
+              ? `0 0 120px 70px ${theme.glowColor}`
+              : isThinking 
+              ? `0 0 100px 60px ${theme.glowColor}` 
               : `0 0 60px 40px ${theme.glowColor}`,
           }}
           animate={
-            isThinking 
+            isSpeaking
+              ? {
+                  opacity: [0.6, 1, 0.6],
+                  scale: [1, 1.15, 1]
+                }
+              : isThinking 
               ? { 
                   opacity: [0.4, 1, 0.4],
                   scale: [1, 1.1, 1]
@@ -120,8 +127,8 @@ export function Bubble({
               : { opacity: 0.7, scale: 1 }
           }
           transition={{
-            duration: 1.2,
-            repeat: isThinking ? Infinity : 0,
+            duration: isSpeaking ? 0.6 : 1.2,
+            repeat: (isSpeaking || isThinking) ? Infinity : 0,
             ease: "easeInOut"
           }}
         />
@@ -150,28 +157,41 @@ export function Bubble({
         {isSpeaking && (
           <>
             <motion.div
-              className="absolute inset-0 rounded-full border-2 border-white/30 pointer-events-none"
+              className="absolute inset-0 rounded-full border-4 border-white/40 pointer-events-none"
               animate={{
-                scale: [1, 1.3],
-                opacity: [0.6, 0],
+                scale: [1, 1.4],
+                opacity: [0.8, 0],
               }}
               transition={{
-                duration: 2,
+                duration: 1.2,
                 repeat: Infinity,
                 ease: 'easeOut',
               }}
             />
             <motion.div
+              className="absolute inset-0 rounded-full border-4 border-white/30 pointer-events-none"
+              animate={{
+                scale: [1, 1.6],
+                opacity: [0.6, 0],
+              }}
+              transition={{
+                duration: 1.2,
+                repeat: Infinity,
+                ease: 'easeOut',
+                delay: 0.3,
+              }}
+            />
+            <motion.div
               className="absolute inset-0 rounded-full border-2 border-white/20 pointer-events-none"
               animate={{
-                scale: [1, 1.5],
+                scale: [1, 1.8],
                 opacity: [0.4, 0],
               }}
               transition={{
-                duration: 2,
+                duration: 1.2,
                 repeat: Infinity,
                 ease: 'easeOut',
-                delay: 0.4,
+                delay: 0.6,
               }}
             />
           </>

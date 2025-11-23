@@ -138,15 +138,15 @@ const AudioMesh = ({
       audioAnalyser.getByteFrequencyData(dataArray);
       const lowerHalf = dataArray.slice(0, dataArray.length / 2);
       const average = lowerHalf.reduce((a, b) => a + b, 0) / lowerHalf.length;
-      targetFreq = average * 1.5;
+      targetFreq = average * 2.5;
     } else if (isSpeaking) {
-      targetFreq = Math.sin(state.clock.getElapsedTime() * 4) * 20 + 30;
+      targetFreq = Math.sin(state.clock.getElapsedTime() * 6) * 30 + 50;
     } else {
       targetFreq = 5; 
     }
 
     const currentFreq = material.uniforms.u_frequency.value;
-    material.uniforms.u_frequency.value = THREE.MathUtils.lerp(currentFreq, targetFreq, 0.25);
+    material.uniforms.u_frequency.value = THREE.MathUtils.lerp(currentFreq, targetFreq, 0.4);
   });
 
   return (
@@ -185,7 +185,7 @@ export default function ThreeVisualizer({
       
       <EffectComposer enabled={true}>
         <Bloom 
-          intensity={1.5} 
+          intensity={isSpeaking ? 2.5 : 1.5} 
           luminanceThreshold={0.2}
           luminanceSmoothing={0.9} 
           mipmapBlur={true} 
