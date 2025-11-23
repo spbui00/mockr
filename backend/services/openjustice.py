@@ -24,17 +24,25 @@ class OpenJusticeService:
         conversation_id: Optional[str],
         user_message: str,
         title: Optional[str] = None,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        resources: Optional[List[Dict[str, str]]] = None
     ) -> Dict[str, Any]:
         try:
-            messages = [
-                {
-                    "model": "claude-3-7-sonnet-latest",
-                    "role": "user",
-                    "content": user_message,
-                    "metadata": {}
-                }
-            ]
+            metadata = {}
+            if resources and len(resources) > 0:
+                metadata["resources"] = resources
+                print(f"[OpenJustice] Attaching {len(resources)} resource(s) to message: {[r.get('name') for r in resources]}")
+            
+            message = {
+                "model": "gpt-4o-mini-2024-07-18",
+                "role": "user",
+                "content": user_message
+            }
+            
+            if metadata:
+                message["metadata"] = metadata
+            
+            messages = [message]
             
             payload = {
                 "conversationId": conversation_id,
@@ -43,25 +51,45 @@ class OpenJusticeService:
                 "prompt": system_prompt
             }
             
+            print(f"[OpenJustice] Payload: {json.dumps(payload, indent=2)}")
+            
             url = f"{self.base_url}/conversation/send-message"
             headers = self._get_headers()
             
             
-            response = await self.client.post(
-                url,
-                headers=headers,
-                json=payload
-            )
+            max_attempts = 3
+            backoff_seconds = 1
             
-            
-            response.raise_for_status()
-            data = response.json()
-            return data
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    response = await self.client.post(
+                        url,
+                        headers=headers,
+                        json=payload
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    return data
+                except httpx.HTTPStatusError as http_err:
+                    status = http_err.response.status_code
+                    response_text = http_err.response.text if hasattr(http_err.response, 'text') else 'N/A'
+                    
+                    if status == 400:
+                        print(f"[OpenJustice] 400 Bad Request error: {response_text}")
+                        print(f"[OpenJustice] This may be due to malformed message or invalid resources")
+                    
+                    if status >= 500 and attempt < max_attempts:
+                        print(f"[OpenJustice] Temporary error {status}. Retrying in {backoff_seconds}s (attempt {attempt}/{max_attempts})")
+                        await asyncio.sleep(backoff_seconds)
+                        backoff_seconds *= 2
+                        continue
+                    raise
         
         except httpx.HTTPError as e:
+            resp = getattr(e, "response", None)
             print(f"OpenJustice API error: {e}")
-            print(f"Response status: {response.status_code if 'response' in locals() else 'N/A'}")
-            print(f"Response text: {response.text if 'response' in locals() else 'N/A'}")
+            print(f"Response status: {resp.status_code if resp else 'N/A'}")
+            print(f"Response text: {resp.text if resp else 'N/A'}")
             raise Exception(f"Failed to send message: {str(e)}")
     
     async def stream_dialog_flow(
@@ -132,16 +160,24 @@ class OpenJusticeService:
         try:
             files = {"file": (filename, file_data)}
             
+            print(f"[OpenJustice] Uploading file: {filename} ({len(file_data)} bytes)")
+            
             response = await self.client.post(
                 f"{self.base_url}/conversation/resources/upload-file",
                 headers={"Authorization": f"Bearer {self.api_key}"},
                 files=files
             )
             response.raise_for_status()
-            return response.json()
+            result = response.json()
+            
+            print(f"[OpenJustice] Upload response: {json.dumps(result, indent=2)}")
+            
+            return result
         
         except httpx.HTTPError as e:
-            print(f"File upload error: {e}")
+            print(f"[OpenJustice] File upload error: {e}")
+            if hasattr(e, 'response'):
+                print(f"[OpenJustice] Response: {e.response.text}")
             raise Exception(f"Failed to upload file: {str(e)}")
     
     async def get_jurisdictions(self) -> List[Dict[str, Any]]:

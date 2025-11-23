@@ -46,6 +46,7 @@ export function ChatInterface({
   const [currentStreamingMessage, setCurrentStreamingMessage] = useState('');
   const [isUserScrolled, setIsUserScrolled] = useState(false);
   const [flowComplete, setFlowComplete] = useState(isFlowComplete);
+  const [uploadedFiles, setUploadedFiles] = useState<Array<{id: string, name: string}>>([]);
   
   const wsRef = useRef<WebSocket | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -148,11 +149,47 @@ export function ChatInterface({
             break;
           
           case 'streaming_end':
+            if (streamingMessageRef.current.trim()) {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `ai_${Date.now()}`,
+                  role: 'assistant',
+                  content: streamingMessageRef.current,
+                  timestamp: new Date().toISOString(),
+                },
+              ]);
+            }
+            setCurrentStreamingMessage('');
+            streamingMessageRef.current = '';
             setIsStreaming(false);
+            break;
+          
+          case 'file_uploaded':
+            setUploadedFiles((prev) => [
+              ...prev,
+              {
+                id: data.resourceId,
+                name: data.filename,
+              },
+            ]);
             break;
           
           case 'error':
             console.error('WebSocket error:', data.message);
+            if (streamingMessageRef.current.trim()) {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `ai_${Date.now()}`,
+                  role: 'assistant',
+                  content: streamingMessageRef.current,
+                  timestamp: new Date().toISOString(),
+                },
+              ]);
+            }
+            setCurrentStreamingMessage('');
+            streamingMessageRef.current = '';
             alert(`Error: ${data.message}`);
             setIsStreaming(false);
             break;
@@ -419,6 +456,20 @@ export function ChatInterface({
 
       <div className="p-4 border-t space-y-3">
         <FileUpload onFileSelect={handleFileUpload} disabled={!isConnected || isStreaming} />
+        
+        {uploadedFiles.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {uploadedFiles.map((file) => (
+              <div
+                key={file.id}
+                className="flex items-center space-x-1 bg-muted px-2 py-1 rounded text-xs"
+              >
+                <span className="text-green-600 dark:text-green-400">✓</span>
+                <span>{file.name}</span>
+              </div>
+            ))}
+          </div>
+        )}
         
         <div className="flex space-x-2 items-end">
           <Textarea

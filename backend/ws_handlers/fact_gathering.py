@@ -22,6 +22,8 @@ async def handle_fact_gathering_session(websocket: WebSocket, session_id: str):
         "execution_id": None,
         "flow_id": None,
         "messages": [],
+        "uploaded_files": [],
+        "pending_files": [],
         "created_at": datetime.now()
     }
     
@@ -151,17 +153,38 @@ async def handle_user_message(
             "timestamp": datetime.now().isoformat()
         })
         
-        await openjustice_service.send_message_to_conversation(
-            conversation_id=conversation_id,
-            user_message=text
-        )
-        
-        execution_id = session.get("execution_id")
+        pending_files = session.get("pending_files", [])
         flow_id = session.get("flow_id")
         
-        print(f"[handle_user_message] Streaming with conversation_id={conversation_id}, flow_id={flow_id}, execution_id={execution_id}")
+        if pending_files:
+            print(f"[handle_user_message] Sending message with {len(pending_files)} attached file(s): {[f['name'] for f in pending_files]}")
         
-        if execution_id:
+        await openjustice_service.send_message_to_conversation(
+            conversation_id=conversation_id,
+            user_message=text,
+            resources=pending_files if pending_files else None
+        )
+        
+        had_files = False
+        if pending_files:
+            print(f"[handle_user_message] Files attached successfully, clearing pending_files")
+            session["pending_files"] = []
+            had_files = True
+            print(f"[handle_user_message] Will stream with conversationId={conversation_id}, flowId={flow_id} (NOT executionId)")
+        
+        execution_id = session.get("execution_id")
+        
+        print(f"[handle_user_message] Streaming with conversation_id={conversation_id}, flow_id={flow_id}, execution_id={execution_id}, had_files={had_files}")
+        
+        if had_files and flow_id and conversation_id:
+            print(f"[handle_user_message] Files were attached - streaming with conversation+flow (ignoring old executionId)")
+            await stream_dialog_flow_response(
+                websocket,
+                session,
+                dialog_flow_id=flow_id,
+                conversation_id=conversation_id
+            )
+        elif execution_id:
             await stream_dialog_flow_response(
                 websocket,
                 session,
@@ -194,6 +217,8 @@ async def stream_dialog_flow_response(
     execution_id: str = None
 ):
     try:
+        print(f"[stream_dialog_flow_response] Starting stream with dialog_flow_id={dialog_flow_id}, conversation_id={conversation_id}, execution_id={execution_id}")
+        
         await websocket.send_json({
             "type": "streaming_start"
         })
@@ -202,14 +227,19 @@ async def stream_dialog_flow_response(
         last_node_type = None
         is_awaiting_input = False
         has_received_any_message = False
+        event_count = 0
         
         async for event in openjustice_service.stream_dialog_flow(
             dialog_flow_id=dialog_flow_id,
             conversation_id=conversation_id,
             execution_id=execution_id
         ):
+            event_count += 1
             event_type = event.get("event")
             event_data = event.get("data", {})
+            
+            if event_count % 10 == 0:
+                print(f"[stream_dialog_flow_response] Processed {event_count} events, current message length: {len(current_message)}")
             
             
             if event_type == "message":
@@ -217,11 +247,49 @@ async def stream_dialog_flow_response(
                 current_message += text
                 has_received_any_message = True
                 
+                if event_count <= 5 or event_count % 50 == 0:
+                    print(f"[stream_dialog_flow_response] Message event #{event_count}: '{text[:50]}...' (total length: {len(current_message)})")
+                
                 await websocket.send_json({
                     "type": "ai_message",
                     "text": text,
                     "isComplete": False
                 })
+            
+            elif event_type == "error":
+                error_text = event_data.get("text", "") or event_data.get("message", "")
+                if error_text:
+                    print(f"[WS Handler] Stream error: {error_text}")
+                    if "INVALID_TOOL_RESULTS" in error_text or "stream error" in error_text.lower():
+                        print("[WS Handler] LangChain tool error detected - saving partial message")
+                    elif "tool_use.name" in error_text or "400" in error_text:
+                        print("[WS Handler] File processing error from OpenJustice API - known issue with their file handling")
+                
+                if current_message and current_message.strip():
+                    print(f"[WS Handler] Saving partial response ({len(current_message)} chars) before error")
+                    session["messages"].append({
+                        "id": f"msg_{len(session['messages'])}",
+                        "role": "assistant",
+                        "content": current_message,
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    
+                    if "tool_use.name" in error_text and len(current_message) > 50:
+                        print(f"[WS Handler] File was processed (got {len(current_message)} chars), treating as success despite error")
+                        await websocket.send_json({
+                            "type": "flow_complete"
+                        })
+                        return
+                
+                error_message = error_text or "Stream error occurred"
+                if "tool_use.name" in error_text:
+                    error_message = "File was processed but OpenJustice encountered an error. The partial response has been saved."
+                
+                await websocket.send_json({
+                    "type": "error",
+                    "message": error_message
+                })
+                break
             
             elif event_type == "node-result":
                 node_type = event_data.get("nodeType")
@@ -229,6 +297,7 @@ async def stream_dialog_flow_response(
                 node_title = event_data.get("title", "")
                 node_desc = event_data.get("description", "")
                 
+                print(f"[stream_dialog_flow_response] Node result: type={node_type}, status={node_status}, title={node_title}")
                 
                 last_node_type = node_type
                 
@@ -336,8 +405,13 @@ async def stream_dialog_flow_response(
                 print(f"[WS Handler] Sent awaiting_input with executionId: {execution_id}")
             else:
                 print("[WS Handler] Warning: Stream ended awaiting input but no executionId")
-        elif session.get("execution_id"):
-            print("[WS Handler] Warning: Stream ended without awaiting input but executionId exists")
+        elif last_node_type == "outcome" or not session.get("execution_id"):
+            print("[WS Handler] Flow complete - outcome node or no execution_id")
+            await websocket.send_json({
+                "type": "flow_complete"
+            })
+        else:
+            print("[WS Handler] Warning: Stream ended without awaiting input but executionId exists - treating as awaiting input")
             execution_id = session.get("execution_id")
             await websocket.send_json({
                 "type": "awaiting_input",
@@ -345,6 +419,14 @@ async def stream_dialog_flow_response(
             })
         
     except Exception as e:
+        print(f"[WS Handler] Exception during streaming: {str(e)}")
+        if current_message:
+            session["messages"].append({
+                "id": f"msg_{len(session['messages'])}",
+                "role": "assistant",
+                "content": current_message,
+                "timestamp": datetime.now().isoformat()
+            })
         await websocket.send_json({
             "type": "error",
             "message": f"Streaming failed: {str(e)}"
@@ -374,10 +456,23 @@ async def handle_file_upload(
             filename=filename
         )
         
+        resource_id = result.get("resourceId")
+        
+        file_resource = {
+            "id": resource_id,
+            "name": filename
+        }
+        
+        session["uploaded_files"].append(file_resource)
+        session["pending_files"].append(file_resource)
+        
+        print(f"[handle_file_upload] File uploaded successfully: {filename} (ID: {resource_id})")
+        print(f"[handle_file_upload] Total uploaded files: {len(session['uploaded_files'])}, Pending: {len(session['pending_files'])}")
+        
         await websocket.send_json({
             "type": "file_uploaded",
             "filename": filename,
-            "resourceId": result.get("resourceId"),
+            "resourceId": resource_id,
             "size": len(file_bytes)
         })
     
