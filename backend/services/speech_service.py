@@ -9,7 +9,7 @@ class SpeechService:
         self.deepgram = DeepgramClient(api_key=settings.deepgram_api_key)
         self.voice_mapping = {
             "judge": "aura-athena-en",
-            "prosecutor": "aura-arcas-en",
+            "prosecutor": "aura-2-athena-en",
             "defense": "aura-angus-en",
         }
     
