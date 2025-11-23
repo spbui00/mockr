@@ -106,11 +106,13 @@ const fragmentShader = `
 const AudioMesh = ({ 
   isSpeaking, 
   audioAnalyser, 
-  color 
+  color,
+  isUser = false
 }: { 
   isSpeaking: boolean; 
   audioAnalyser?: AnalyserNode; 
   color: { r: number; g: number; b: number };
+  isUser?: boolean;
 }) => {
   const meshRef = useRef<THREE.Mesh>(null);
   
@@ -138,7 +140,8 @@ const AudioMesh = ({
       audioAnalyser.getByteFrequencyData(dataArray);
       const lowerHalf = dataArray.slice(0, dataArray.length / 2);
       const average = lowerHalf.reduce((a, b) => a + b, 0) / lowerHalf.length;
-      targetFreq = average * 2.5;
+      const multiplier = isUser ? 1.5 : 2.5;
+      targetFreq = average * multiplier;
     } else if (isSpeaking) {
       targetFreq = Math.sin(state.clock.getElapsedTime() * 6) * 30 + 50;
     } else {
@@ -165,11 +168,13 @@ const AudioMesh = ({
 export default function ThreeVisualizer({ 
   isSpeaking, 
   theme, 
-  audioAnalyser 
+  audioAnalyser,
+  isUser = false
 }: { 
   isSpeaking: boolean; 
   theme: { colors: { r: number; g: number; b: number } };
   audioAnalyser?: AnalyserNode;
+  isUser?: boolean;
 }) {
   return (
     <Canvas 
@@ -180,7 +185,8 @@ export default function ThreeVisualizer({
       <AudioMesh 
         isSpeaking={isSpeaking} 
         audioAnalyser={audioAnalyser} 
-        color={theme.colors} 
+        color={theme.colors}
+        isUser={isUser}
       />
       
       <EffectComposer enabled={true}>

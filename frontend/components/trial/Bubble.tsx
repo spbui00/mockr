@@ -90,11 +90,14 @@ export function Bubble({
     }
   };
 
+  const isUserBubble = speaker || isUser;
+  const scaleAmount = isUserBubble ? 1.08 : 1.15;
+
   return (
     <div className="flex flex-col items-center">
       <motion.div 
         className="relative w-80 h-80"
-        animate={isSpeaking ? { scale: [1, 1.15, 1] } : { scale: 1 }}
+        animate={isSpeaking ? { scale: [1, scaleAmount, 1] } : { scale: 1 }}
         transition={{ 
           duration: 0.8, 
           repeat: isSpeaking ? Infinity : 0, 
@@ -108,7 +111,7 @@ export function Bubble({
           className={`absolute inset-32 rounded-full ${disabled ? 'opacity-50' : ''}`}
           style={{
             boxShadow: isSpeaking
-              ? `0 0 120px 70px ${theme.glowColor}`
+              ? `0 0 ${isUserBubble ? '100px 60px' : '120px 70px'} ${theme.glowColor}`
               : isThinking 
               ? `0 0 100px 60px ${theme.glowColor}` 
               : `0 0 60px 40px ${theme.glowColor}`,
@@ -117,7 +120,7 @@ export function Bubble({
             isSpeaking
               ? {
                   opacity: [0.6, 1, 0.6],
-                  scale: [1, 1.15, 1]
+                  scale: [1, isUserBubble ? 1.08 : 1.15, 1]
                 }
               : isThinking 
               ? { 
@@ -148,6 +151,7 @@ export function Bubble({
               isSpeaking={isSpeaking} 
               theme={theme}
               audioAnalyser={audioAnalyser}
+              isUser={isUserBubble}
             />
           </div>
           
